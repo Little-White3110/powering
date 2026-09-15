@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 配置页全部由 Compose（miuix）绘制，这里仅提供无 ActionBar 的基底主题 -->
+    <style name="Theme.HolePowerRing" parent="@android:style/Theme.Material.Light.NoActionBar" />
+</resources>

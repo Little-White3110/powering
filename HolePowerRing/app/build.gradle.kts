@@ -1,0 +1,61 @@
+// AGP 9 已内置 Kotlin 支持，无需 org.jetbrains.kotlin.android；
+// 组合使用 JetBrains Compose Compiler 插件（与 miuix 参考工程一致）。
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+android {
+    namespace = "com.powerring.hole"
+    // AGP 9.x 新 DSL（compileSdk 37，与参考工程一致）
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
+
+    defaultConfig {
+        applicationId = "com.powerring.hole"
+        minSdk = 34
+        targetSdk = 37
+        versionCode = 1
+        versionName = "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+dependencies {
+    // Xposed API 仅在编译期可见，运行时由 LSPosed 提供
+    compileOnly(project(":xposedstub"))
+
+    // 模块配置页：miuix（HyperOS）Compose 组件
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4-rc01")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4-rc01")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    // Comppose 运行时版本与 miuix 0.9.4-rc01 编译时的 CMP 1.11.1 对齐
+    implementation("org.jetbrains.compose.foundation:foundation:1.11.1")
+    implementation("org.jetbrains.compose.runtime:runtime:1.11.1")
+    implementation("org.jetbrains.compose.ui:ui:1.11.1")
+}

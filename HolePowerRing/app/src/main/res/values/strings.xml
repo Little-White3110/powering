@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">挖孔电量环</string>
+    <string name="module_description">在摄像头挖孔外圈显示环形电量，并隐藏状态栏原电池图标（HyperOS / LSPosed）</string>
+</resources>
