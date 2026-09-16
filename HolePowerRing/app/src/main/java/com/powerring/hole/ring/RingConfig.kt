@@ -17,6 +17,16 @@ data class RingConfig(
     val chargingGlow: Boolean = true,
     /** 环描边宽度（dp） */
     val strokeWidthDp: Float = 2.5f,
+    /** 水平偏移（dp），正值向右 */
+    val offsetXDp: Float = 0f,
+    /** 垂直偏移（dp），正值向下 */
+    val offsetYDp: Float = 0f,
+    /** 环半径缩放，1.0 为默认，用于精确贴合挖孔 */
+    val scale: Float = 1f,
+    /** 启用自定义颜色（启用后进度弧固定使用 [customColor]） */
+    val useCustomColor: Boolean = false,
+    /** 自定义颜色（ARGB） */
+    val customColor: Int = 0xFF277AF7.toInt(),
 ) {
     companion object {
         const val PREFS_NAME = "hole_power_ring_prefs"
@@ -26,6 +36,19 @@ data class RingConfig(
         const val KEY_LEVEL_ANIM = "level_anim"
         const val KEY_CHARGING_GLOW = "charging_glow"
         const val KEY_STROKE_WIDTH = "stroke_width_dp"
+        const val KEY_OFFSET_X = "offset_x_dp"
+        const val KEY_OFFSET_Y = "offset_y_dp"
+        const val KEY_SCALE = "ring_scale"
+        const val KEY_USE_CUSTOM_COLOR = "use_custom_color"
+        const val KEY_CUSTOM_COLOR = "custom_color_argb"
+
+        // 滑杆范围
+        const val STROKE_MIN = 1f
+        const val STROKE_MAX = 8f
+        const val OFFSET_MIN = -20f
+        const val OFFSET_MAX = 20f
+        const val SCALE_MIN = 0.7f
+        const val SCALE_MAX = 1.5f
 
         val DEFAULT = RingConfig()
     }

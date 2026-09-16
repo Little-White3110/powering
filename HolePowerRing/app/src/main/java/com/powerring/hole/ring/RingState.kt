@@ -59,6 +59,13 @@ object RingState {
     val config: RingConfig
         get() = HookPrefs.get()
 
+    /** 上一帧使用的配置签名，变化时补发一次重绘让静态画面也能即时响应调节 */
+    @Volatile
+    private var lastConfigSig: String = ""
+
+    private fun RingConfig.signature() =
+        "$ringEnabled|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|$useCustomColor|$customColor|$chargingGlow|$levelAnim"
+
     // ---- 生命周期 ----
 
     fun attachContext(context: Context) {
@@ -129,6 +136,12 @@ object RingState {
     fun onCutoutDraw(view: View, canvas: Canvas) {
         val c = config
         attachCutoutView(view)
+        // 配置发生变化时补发一帧，使滑杆/颜色调节在静止状态下也即时可见
+        val sig = c.signature()
+        if (sig != lastConfigSig) {
+            lastConfigSig = sig
+            invalidateAll()
+        }
         if (!c.ringEnabled || !screenOn) return
         try {
             RingRenderer.draw(view, canvas, c, this)

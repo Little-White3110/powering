@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.PowerManager
+import com.powerring.hole.core.HookPrefs
 import com.powerring.hole.core.ModuleLog
 import com.powerring.hole.ring.RingState
 
@@ -18,6 +19,9 @@ import com.powerring.hole.ring.RingState
  * - ACTION_SCREEN_ON / ACTION_SCREEN_OFF（息屏/AOD 不画环，防烧屏且省电）
  */
 object BatteryObserver {
+
+    /** 配置页保存后发出的显式广播，通知 SystemUI 侧刷新环 */
+    const val ACTION_CONFIG_CHANGED = "com.powerring.hole.CONFIG_CHANGED"
 
     private var started = false
 
@@ -42,6 +46,10 @@ object BatteryObserver {
                         )
                     Intent.ACTION_SCREEN_ON -> RingState.setScreenOn(true)
                     Intent.ACTION_SCREEN_OFF -> RingState.setScreenOn(false)
+                    ACTION_CONFIG_CHANGED -> {
+                        HookPrefs.invalidate()
+                        RingState.invalidateAll()
+                    }
                 }
             }
         }
@@ -51,8 +59,10 @@ object BatteryObserver {
             addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(ACTION_CONFIG_CHANGED)
         }
-        app.registerReceiver(receiver, filter)
+        // 接收来自本模块配置页（另一应用进程/包）的显式广播，需要 EXPORTED
+        app.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         RingState.setScreenOn(app.powerManager().isInteractive)
         ModuleLog.i("电池状态监听已注册")
     }

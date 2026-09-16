@@ -58,25 +58,31 @@ object RingRenderer {
 
         if (hole.clipRisk && !clipRiskLogged) {
             clipRiskLogged = true
-            ModuleLog.e(
-                "检测到环可能被挖孔装饰窗口裁切（R2 风险），" +
-                    "需要在真机验证；若被裁切需启用扩窗方案", null,
-            )
+            ModuleLog.i("环有越出窗口边界的部分（用户可通过缩放/偏移修正）")
         }
 
         val darkIcons = MiuixPalette.isDarkIconMode(state.tintColor)
 
-        // 颜色选择：低电红 > 充电蓝 > 省电琥珀 > 跟随状态栏图标色
+        // 颜色选择：自定义色（覆盖一切）> 低电红 > 充电蓝 > 省电琥珀 > 跟随状态栏图标色
         val progressColor = when {
+            config.useCustomColor -> config.customColor
             state.level <= LOW_BATTERY_THRESHOLD -> MiuixPalette.errorColor(darkIcons)
             state.charging -> MiuixPalette.primaryColor(darkIcons)
             state.powerSave -> MiuixPalette.POWER_SAVE_AMBER
             else -> MiuixPalette.foregroundColor(darkIcons)
         }
+        // 自定义色时底槽也用该色的低透明度版本（alpha ~15%），视觉更统一
+        val trackColor = if (config.useCustomColor) {
+            (0x26 shl 24) or (progressColor and 0x00FFFFFF)
+        } else {
+            MiuixPalette.trackColor(darkIcons)
+        }
 
-        val cx = hole.cx
-        val cy = hole.cy
-        val radius = hole.holeRadius + gap + stroke / 2f
+        // 用户手动微调：缩放（半径）+ 上下左右偏移
+        val baseRadius = (hole.holeRadius + gap + stroke / 2f) * config.scale
+        val cx = hole.cx + config.offsetXDp * density
+        val cy = hole.cy + config.offsetYDp * density
+        val radius = baseRadius
         val fraction = (state.animatedLevel / 100f).coerceIn(0f, 1f)
 
         if (!diagLogged) {
@@ -84,7 +90,7 @@ object RingRenderer {
             ModuleLog.i(
                 "环绘制参数: fraction=$fraction level=${state.level} charging=${state.charging} " +
                     "color=#${Integer.toHexString(progressColor)} cx=$cx cy=$cy radius=$radius " +
-                    "stroke=$stroke darkIcons=$darkIcons",
+                    "stroke=$stroke scale=${config.scale} off=(${config.offsetXDp},${config.offsetYDp})",
             )
         }
 
@@ -92,7 +98,7 @@ object RingRenderer {
         try {
             // 1) 底槽整圆
             trackPaint.strokeWidth = stroke
-            trackPaint.color = MiuixPalette.trackColor(darkIcons)
+            trackPaint.color = trackColor
             canvas.drawCircle(cx, cy, radius, trackPaint)
 
             if (fraction <= 0f) return
