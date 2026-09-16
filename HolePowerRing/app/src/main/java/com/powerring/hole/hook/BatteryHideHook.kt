@@ -33,6 +33,21 @@ object BatteryHideHook {
     private val forcedViews: MutableSet<View> =
         Collections.newSetFromMap(WeakHashMap())
 
+    /** 所有已见到的状态栏电池 View，挖孔几何确认后需要重新评估一次 */
+    private val knownViews: MutableSet<View> =
+        Collections.newSetFromMap(WeakHashMap())
+
+    @Volatile
+    private var containerCheckedLogged = false
+
+    /** 挖孔几何首次解析成功后（RingState 回调）重新评估所有已存在的电池 View。 */
+    fun refreshAll() {
+        val snapshot = synchronized(knownViews) { knownViews.toList() }
+        snapshot.forEach { v ->
+            if (v.isAttachedToWindow) v.post { applyHide(v) }
+        }
+    }
+
     fun install(classLoader: ClassLoader) {
         val containerClass = XposedHelpers.findClassIfExists(CONTAINER_VIEW, classLoader)
         val meterClass = XposedHelpers.findClassIfExists(METER_VIEW, classLoader)
@@ -48,38 +63,70 @@ object BatteryHideHook {
 
         // 1) 容器层：系统自身的隐藏开关
         if (containerClass != null) {
-            XposedHelpers.findAndHookMethod(
-                containerClass, "setIsHideBattery", java.lang.Boolean::class.java,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        if (RingState.shouldForceHideBattery()) {
-                            param.args[0] = java.lang.Boolean.TRUE
+            try {
+                XposedHelpers.findAndHookMethod(
+                    containerClass, "setIsHideBattery", java.lang.Boolean::class.java,
+                    object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            if (RingState.shouldForceHideBattery()) {
+                                param.args[0] = java.lang.Boolean.TRUE
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+                ModuleLog.i("电池容器隐藏 Hook 已安装")
+            } catch (t: Throwable) {
+                ModuleLog.e("Hook setIsHideBattery 失败", t)
+            }
         }
 
-        // 2) 视图层兜底
+        // 2) 视图层兜底（各注册点独立保护，方法名随 R8 版本可能变化）
         if (meterClass != null) {
-            val applyHook = object : XC_MethodHook() {
+            val attachHook = object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val view = param.thisObject as? View ?: return
+                    synchronized(knownViews) { knownViews.add(view) }
+                    // post：等整棵视图树 attach 完成后父链才完整
+                    view.post { applyHide(view) }
+                    // 立即也试一次（覆盖 post 期间的窗口）
+                    applyHide(view)
+                }
+            }
+            val visibilityHook = object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     (param.thisObject as? View)?.let { applyHide(it) }
                 }
             }
-            XposedHelpers.findAndHookMethod(meterClass, "onAttachedToWindow", applyHook)
-            XposedHelpers.findAndHookMethod(meterClass, "updateVisibility\$6", applyHook)
+            for ((methodName, callback) in arrayOf(
+                "onAttachedToWindow" to attachHook,
+                "updateVisibility\$6" to visibilityHook,
+            )) {
+                try {
+                    XposedHelpers.findAndHookMethod(meterClass, methodName, callback)
+                } catch (t: Throwable) {
+                    ModuleLog.e("Hook MiuiBatteryMeterView.$methodName 失败", t)
+                }
+            }
         }
-
-        ModuleLog.i("电池图标隐藏 Hook 已安装")
     }
 
     private fun applyHide(view: View) {
-        if (!isInStatusBatteryContainer(view)) return
-        if (RingState.shouldForceHideBattery()) {
+        synchronized(knownViews) { knownViews.add(view) }
+        val force = RingState.shouldForceHideBattery()
+        val inContainer = isInStatusBatteryContainer(view)
+        if (!containerCheckedLogged) {
+            containerCheckedLogged = true
+            ModuleLog.i(
+                "电池 View 可见性检查: inContainer=$inContainer force=$force " +
+                    "vis=${view.visibility} chain=${parentChain(view)}",
+            )
+        }
+        if (!inContainer) return
+        if (force) {
             forcedViews.add(view)
             if (view.visibility != View.GONE) {
                 view.visibility = View.GONE
+                ModuleLog.i("已隐藏状态栏电池图标")
             }
         } else if (forcedViews.remove(view)) {
             // 开关已关闭：交还系统按其自身逻辑决定显隐，避免强行 VISIBLE 与灵动岛冲突
@@ -87,14 +134,27 @@ object BatteryHideHook {
         }
     }
 
+    /** 输出父链，仅诊断使用。 */
+    private fun parentChain(start: View): String {
+        val sb = StringBuilder()
+        var node: android.view.ViewParent? = start.parent
+        var depth = 0
+        while (node != null && depth < 15) {
+            if (depth > 0) sb.append(" <- ")
+            sb.append(node.javaClass.simpleName)
+            node = node.parent
+            depth++
+        }
+        return sb.toString()
+    }
+
     /** 判断电池 View 是否位于状态栏电池容器内（控制中心等其他实例不动）。 */
     private fun isInStatusBatteryContainer(start: View): Boolean {
-        var node: View? = start
+        var node: android.view.ViewParent? = start.parent
         var depth = 0
-        while (node != null && depth < 8) {
+        while (node != null && depth < 30) {
             if (node.javaClass.name == CONTAINER_VIEW) return true
-            val parent = node.parent
-            node = parent as? View
+            node = node.parent
             depth++
         }
         return false

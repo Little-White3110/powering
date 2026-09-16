@@ -43,6 +43,9 @@ object RingRenderer {
     @Volatile
     private var clipRiskLogged = false
 
+    @Volatile
+    private var diagLogged = false
+
     fun draw(view: View, canvas: Canvas, config: RingConfig, state: RingState) {
         val density = view.resources.displayMetrics.density
         val stroke = config.strokeWidthDp * density
@@ -76,6 +79,15 @@ object RingRenderer {
         val radius = hole.holeRadius + gap + stroke / 2f
         val fraction = (state.animatedLevel / 100f).coerceIn(0f, 1f)
 
+        if (!diagLogged) {
+            diagLogged = true
+            ModuleLog.i(
+                "环绘制参数: fraction=$fraction level=${state.level} charging=${state.charging} " +
+                    "color=#${Integer.toHexString(progressColor)} cx=$cx cy=$cy radius=$radius " +
+                    "stroke=$stroke darkIcons=$darkIcons",
+            )
+        }
+
         canvas.save()
         try {
             // 1) 底槽整圆
@@ -98,8 +110,9 @@ object RingRenderer {
                 canvas.drawCircle(cx, cy, radius, progressPaint)
             } else {
                 val sweep = 360f * fraction
+                // drawArc 参数为 left, top, right, bottom（边界坐标，不是宽高）
                 canvas.drawArc(
-                    cx - radius, cy - radius, radius * 2f, radius * 2f,
+                    cx - radius, cy - radius, cx + radius, cy + radius,
                     -90f, sweep, false, progressPaint,
                 )
             }
@@ -122,15 +135,15 @@ object RingRenderer {
         glowOuterPaint.strokeWidth = stroke * 2.4f
         glowInnerPaint.color = color
         glowInnerPaint.strokeWidth = stroke * 1.5f
-        // 辉光半径依次外扩，宽度差即羽化范围
+        // 辉光半径依次外扩，宽度差即羽化范围；参数为 left, top, right, bottom
+        val outerR = radius + stroke
+        val innerR = radius + stroke * 0.35f
         canvas.drawArc(
-            cx - radius - stroke, cy - radius - stroke,
-            (radius + stroke) * 2f, (radius + stroke) * 2f,
+            cx - outerR, cy - outerR, cx + outerR, cy + outerR,
             -90f, sweep, false, glowOuterPaint,
         )
         canvas.drawArc(
-            cx - radius - stroke * 0.35f, cy - radius - stroke * 0.35f,
-            (radius + stroke * 0.35f) * 2f, (radius + stroke * 0.35f) * 2f,
+            cx - innerR, cy - innerR, cx + innerR, cy + innerR,
             -90f, sweep, false, glowInnerPaint,
         )
     }

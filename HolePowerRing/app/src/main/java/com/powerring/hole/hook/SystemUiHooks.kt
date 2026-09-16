@@ -4,6 +4,7 @@ import android.app.Application
 import com.powerring.hole.core.ModuleLog
 import com.powerring.hole.data.BatteryObserver
 import com.powerring.hole.ring.RingState
+import com.powerring.hole.ring.RingWindowController
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedHelpers
@@ -11,8 +12,9 @@ import de.robv.android.xposed.XposedHelpers
 /**
  * SystemUI 进程内的 Hook 总装。
  *
- * 作用域只有 com.android.systemui，直接 Hook 框架类 Application.onCreate
- * 拿到 Context 后再安装各功能 Hook（此时主线程 Looper 已就绪）。
+ * 当前载体方案：独立 WindowManager 窗口（与灵动岛 DynamicIslandWindow
+ * 同 type=2009，层级可压住岛）。状态栏视图注入与挖孔覆盖层 onDraw
+ * 两套实验载体保留在代码库中但不启用，避免多载体重影。
  */
 object SystemUiHooks {
 
@@ -25,11 +27,23 @@ object SystemUiHooks {
         if (installed) return
         installed = true
 
-        // 先装功能 Hook（不依赖 Context 的部分），确保不遗漏早期创建的 View
-        CutoutRingHook.install(classLoader)
-        BatteryHideHook.install(classLoader)
+        // 状态栏图标明暗色（机型支持时）
+        try {
+            SystemTintHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("明暗色 Hook 安装异常", t)
+        }
 
-        // Application.onCreate 后启动电量监听与上下文初始化
+        // 电池图标隐藏
+        try {
+            BatteryHideHook.install(classLoader)
+            // 挖孔几何确认通常晚于电池 View attach，就绪后补一次隐藏评估
+            RingState.onCutoutResolved = { BatteryHideHook.refreshAll() }
+        } catch (t: Throwable) {
+            ModuleLog.e("电池图标隐藏 Hook 安装异常", t)
+        }
+
+        // Application.onCreate 后拿到 Context：注册电量监听 + 添加环窗口
         XposedHelpers.findAndHookMethod(
             Application::class.java,
             "onCreate",
@@ -39,6 +53,7 @@ object SystemUiHooks {
                         val app = param.thisObject as Application
                         RingState.attachContext(app)
                         BatteryObserver.start(app)
+                        RingWindowController.attach(app)
                         ModuleLog.i("SystemUI Application 初始化完成")
                     } catch (t: Throwable) {
                         ModuleLog.e("Application onCreate Hook 异常", t)

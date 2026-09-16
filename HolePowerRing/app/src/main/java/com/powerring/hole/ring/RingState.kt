@@ -102,10 +102,19 @@ object RingState {
         }
     }
 
+    /** 挖孔几何首次解析成功的回调（由隐藏 Hook 注册，用于时序补偿）。 */
+    @Volatile
+    var onCutoutResolved: (() -> Unit)? = null
+
     fun markCutoutResolved() {
         if (!cutoutEverResolved) {
             cutoutEverResolved = true
             ModuleLog.i("已确认挖孔几何可用，允许隐藏原电池图标")
+            try {
+                onCutoutResolved?.invoke()
+            } catch (t: Throwable) {
+                ModuleLog.e("挖孔就绪回调异常", t)
+            }
         }
     }
 
