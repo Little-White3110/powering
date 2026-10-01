@@ -35,6 +35,12 @@ object MiuixPalette {
      */
     const val POWER_SAVE_AMBER = 0xFFFFB340.toInt()
 
+    /**
+     * 性能模式语义色：miuix 令牌里同样没有对应色，取与省电琥珀可区分的橙色。
+     * 仅在「按电池状态」模式下、且系统调色板不可用时作为回退。
+     */
+    const val PERFORMANCE_ORANGE = 0xFFFF7A1E.toInt()
+
     /** 判断挖孔填充色偏亮还是偏暗，返回 true 表示图标为深色（浅色 UI）。 */
     fun isDarkIconMode(tintColor: Int): Boolean = luminance(tintColor) < 0.5f
 

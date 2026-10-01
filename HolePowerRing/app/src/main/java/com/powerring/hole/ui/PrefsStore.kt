@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import com.powerring.hole.data.BatteryObserver
+import com.powerring.hole.ring.CustomColors
 import com.powerring.hole.ring.RingConfig
+import com.powerring.hole.ring.StateColors
 import java.io.File
 
 /**
@@ -35,6 +37,17 @@ object PrefsStore {
             scale = p.getFloat(RingConfig.KEY_SCALE, 1f),
             useCustomColor = p.getBoolean(RingConfig.KEY_USE_CUSTOM_COLOR, false),
             customColor = p.getInt(RingConfig.KEY_CUSTOM_COLOR, 0xFF277AF7.toInt()),
+            colorMode = resolveColorMode(p),
+            stateColors = StateColors(
+                normal = p.getInt(RingConfig.KEY_STATE_COLOR_NORMAL, 0),
+                low = p.getInt(RingConfig.KEY_STATE_COLOR_LOW, 0),
+                powerSave = p.getInt(RingConfig.KEY_STATE_COLOR_POWER_SAVE, 0),
+                performance = p.getInt(RingConfig.KEY_STATE_COLOR_PERFORMANCE, 0),
+                charging = p.getInt(RingConfig.KEY_STATE_COLOR_CHARGING, 0),
+            ),
+            levelRanges = CustomColors.decodeRanges(
+                p.getString(RingConfig.KEY_LEVEL_RANGES, ""),
+            ),
         )
     }
 
@@ -51,6 +64,23 @@ object PrefsStore {
     fun setInt(context: Context, key: String, value: Int) {
         prefs(context).edit().putInt(key, value).commit()
         commit(context)
+    }
+
+    fun setString(context: Context, key: String, value: String) {
+        prefs(context).edit().putString(key, value).commit()
+        commit(context)
+    }
+
+    /**
+     * 有效配色模式。`color_mode` 是本版本新增的 key，老用户 XML 里只有
+     * `use_custom_color`；未显式设置过模式时按旧值推导，这样模块升级后
+     * **即使从不打开设置页**也不会把「固定单色」静默重置成「跟随系统」。
+     */
+    fun resolveColorMode(prefs: SharedPreferences): Int = when {
+        prefs.contains(RingConfig.KEY_COLOR_MODE) ->
+            prefs.getInt(RingConfig.KEY_COLOR_MODE, RingConfig.DEFAULT.colorMode)
+        prefs.getBoolean(RingConfig.KEY_USE_CUSTOM_COLOR, false) -> RingConfig.MODE_FIXED_COLOR
+        else -> RingConfig.MODE_FOLLOW_SYSTEM
     }
 
     private fun commit(context: Context) {

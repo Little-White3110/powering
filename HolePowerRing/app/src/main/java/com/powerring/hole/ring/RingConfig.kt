@@ -25,10 +25,19 @@ data class RingConfig(
     val offsetYDp: Float = 0f,
     /** 环半径缩放，1.0 为默认，用于精确贴合挖孔 */
     val scale: Float = 1f,
-    /** 启用自定义颜色（启用后进度弧固定使用 [customColor]） */
+    /**
+     * 遗留字段：旧版本的「自定义颜色」开关。现由 [colorMode] 取代，
+     * 仅在 [colorMode] 尚未写入配置时用于推导模式（见 `PrefsStore.resolveColorMode`）。
+     */
     val useCustomColor: Boolean = false,
-    /** 自定义颜色（ARGB） */
+    /** 自定义颜色（ARGB）；仅 [colorMode] 为 MODE_FIXED_COLOR 时生效 */
     val customColor: Int = 0xFF277AF7.toInt(),
+    /** 配色模式，四选一互斥，取值见 [MODE_FOLLOW_SYSTEM] 等常量 */
+    val colorMode: Int = MODE_FOLLOW_SYSTEM,
+    /** 「按电池状态」模式下五路用户色；单路为 0 表示未设置、该状态回退系统色 */
+    val stateColors: StateColors = StateColors.DEFAULT,
+    /** 「按电量区间」模式的区间表；列表顺序即优先级，第一条命中生效 */
+    val levelRanges: List<ColorRange> = emptyList(),
 ) {
     companion object {
         const val PREFS_NAME = "hole_power_ring_prefs"
@@ -44,6 +53,25 @@ data class RingConfig(
         const val KEY_SCALE = "ring_scale"
         const val KEY_USE_CUSTOM_COLOR = "use_custom_color"
         const val KEY_CUSTOM_COLOR = "custom_color_argb"
+        const val KEY_COLOR_MODE = "color_mode"
+        const val KEY_STATE_COLOR_NORMAL = "state_color_normal"
+        const val KEY_STATE_COLOR_LOW = "state_color_low"
+        const val KEY_STATE_COLOR_POWER_SAVE = "state_color_power_save"
+        const val KEY_STATE_COLOR_PERFORMANCE = "state_color_performance"
+        const val KEY_STATE_COLOR_CHARGING = "state_color_charging"
+        const val KEY_LEVEL_RANGES = "level_range_colors"
+
+        /** 跟随系统电池图标色（改动前的默认行为） */
+        const val MODE_FOLLOW_SYSTEM = 0
+
+        /** 固定单色，取 [customColor] */
+        const val MODE_FIXED_COLOR = 1
+
+        /** 按电池状态五路取色，取 [stateColors] */
+        const val MODE_BATTERY_STATE = 2
+
+        /** 按电量区间取色，取 [levelRanges] */
+        const val MODE_LEVEL_RANGE = 3
 
         // 滑杆范围
         const val STROKE_MIN = 1f

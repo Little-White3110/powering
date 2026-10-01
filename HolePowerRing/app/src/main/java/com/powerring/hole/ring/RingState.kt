@@ -120,8 +120,11 @@ object RingState {
 
     private fun RingConfig.signature() =
         "$ringEnabled|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
-            "$useCustomColor|$customColor|" +
-            "$collapseOnImmersive|$collapseOnIsland"
+            "$colorMode|$customColor|" +
+            "$collapseOnImmersive|$collapseOnIsland|" +
+            "${stateColors.normal},${stateColors.low},${stateColors.powerSave}," +
+            "${stateColors.performance},${stateColors.charging}|" +
+            CustomColors.encodeRanges(levelRanges)
 
     // ---- 生命周期 ----
 

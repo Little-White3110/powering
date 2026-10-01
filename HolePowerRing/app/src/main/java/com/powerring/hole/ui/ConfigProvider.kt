@@ -59,6 +59,13 @@ class ConfigProvider : ContentProvider() {
         RingConfig.KEY_OFFSET_Y -> prefs.getFloat(key, RingConfig.DEFAULT.offsetYDp)
         RingConfig.KEY_SCALE -> prefs.getFloat(key, RingConfig.DEFAULT.scale)
         RingConfig.KEY_CUSTOM_COLOR -> prefs.getInt(key, RingConfig.DEFAULT.customColor)
+        RingConfig.KEY_COLOR_MODE -> PrefsStore.resolveColorMode(prefs)
+        RingConfig.KEY_STATE_COLOR_NORMAL -> prefs.getInt(key, 0)
+        RingConfig.KEY_STATE_COLOR_LOW -> prefs.getInt(key, 0)
+        RingConfig.KEY_STATE_COLOR_POWER_SAVE -> prefs.getInt(key, 0)
+        RingConfig.KEY_STATE_COLOR_PERFORMANCE -> prefs.getInt(key, 0)
+        RingConfig.KEY_STATE_COLOR_CHARGING -> prefs.getInt(key, 0)
+        RingConfig.KEY_LEVEL_RANGES -> prefs.getString(key, "")
         else -> null
     }
 
@@ -94,6 +101,13 @@ class ConfigProvider : ContentProvider() {
             RingConfig.KEY_SCALE,
             RingConfig.KEY_USE_CUSTOM_COLOR,
             RingConfig.KEY_CUSTOM_COLOR,
+            RingConfig.KEY_COLOR_MODE,
+            RingConfig.KEY_STATE_COLOR_NORMAL,
+            RingConfig.KEY_STATE_COLOR_LOW,
+            RingConfig.KEY_STATE_COLOR_POWER_SAVE,
+            RingConfig.KEY_STATE_COLOR_PERFORMANCE,
+            RingConfig.KEY_STATE_COLOR_CHARGING,
+            RingConfig.KEY_LEVEL_RANGES,
         )
     }
 }

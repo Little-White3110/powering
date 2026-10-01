@@ -460,6 +460,41 @@ Hook 点：`com.android.systemui.statusbar.views.MiuiBatteryMeterView.updateIsla
 
 ---
 
+## 15. 自定义配色模式契约（2026-10-02）
+
+> 本节记录**代码层契约**（已由 `assembleDebug` + 14 条 JVM 单测确认）；末尾「真机实测」仍为待办，未验证前不得视为已解决。
+
+**模式互斥**：`color_mode` 四值，`RingRenderer` 只在一个 `when (config.colorMode)` 里分叉，几何与收缩逻辑不受影响。
+
+| 值 | 模式 | 取色来源 |
+|---|---|---|
+| 0 | 跟随系统电池图标 | `RingState.batteryPalette`（`BatteryColorHook` 反射系统色）→ 取不到则 `MiuixPalette` 令牌 |
+| 1 | 固定单色 | `custom_color_argb`（沿用旧 key） |
+| 2 | 按电池状态 | `state_color_normal/low/power_save/performance/charging` 五路 |
+| 3 | 按电量区间 | `level_range_colors`（单条字符串） |
+
+**遗留字段迁移**：`use_custom_color` 降级为只读遗留，仅在 `color_mode` **从未写入过**时用于推导（true→1，false→0）。推导唯一实现在 `PrefsStore.resolveColorMode()`，`ConfigProvider` 的 `KEY_COLOR_MODE` 列也调它——这样模块升级后即使不打开设置页也不会把「固定单色」静默重置成「跟随系统」。Hook 侧（`HookPrefs`）不做推导，它读的是 Provider 已算好的游标列（HyperOS 上 SystemUI 是普通应用，直接读别人私有文件会被 SELinux 拒）。
+
+**存储**：五路状态色各一个 Int key，**0 = 未设置**；区间表一个 String key，形如 `1-20:FFFFD700,21-80:FF277AF7`，上限 8 段（`CustomColors.MAX_RANGES`）。String 能跨进程是因为 `HookPrefs.readColumn` 的 `else` 分支本就走 `cursor.getString`，无需改 IPC 机制。解码 `CustomColors.decodeRanges()` 对畸形片段**逐段 try/catch 丢弃**、不抛异常——它在 SystemUI 进程内被调用（AGENTS.md 铁律 1）。
+- 实测最大串长（8 段）：____
+- 单段坏数据（如 `21-40:ZZZZ`）在真机上的降级表现：____
+
+**取色链**：状态优先级沿用系统 `MiuiBatteryMeterIconView.getProgressStatus()` 的顺序（充电 > 性能 > 省电 > 低电 > 普通）；未设置槽位逐槽回退：系统调色板 → 内置令牌。其中**性能橙 `0xFFFF7A1E`** 与省电琥珀 `0xFFFFB340` 同属本模块自定义语义色，miuix 令牌里没有对应物。区间命中用 `state.level`（整数百分比）而非动画值，跨边界时颜色明确跳变。区间未命中任何一段时回退到「跟随系统」链，保证深浅背景下环都可见。
+
+**有意的视觉变更**：底槽透明度统一到 `TRACK_ALPHA = 0x33`。改造前「固定单色」分支用 `0x26`（约 15%），现四模式一致（约 20%），仅影响自定义色的底槽观感。
+
+**色盘**：设置页内联色盘抽出为 `ui/ColorPickerDialog`，三处（固定色 / 状态色 / 区间色）共用；`ColorPicker` 与十六进制输入框双向同步且不成环（两条路径写的是各自对端状态，无 `LaunchedEffect` 回环），落盘只在「确定」。支持 `RGB` / `RRGGBB` / `AARRGGBB`，可省略 `#`；输入过滤 `HexColor.normalizeInput` 上限 9 字符（`#` + 8 位），必须容得下 `#AARRGGBB`。
+
+**真机实测（待办，逐项填实际日志行）**：
+- [ ] 模式 0 回归：观感与配色改动前一致（`环配色: mode=0 ...`）
+- [ ] 旧配置迁移：升级前开着「自定义颜色」，不打开设置页直接重启 SystemUI → 日志应为 `colorMode=1`
+- [ ] 模式 2：只设「低电量」，其余四路应保持跟随系统（不应变黑）
+- [ ] 模式 3：`1–20` 金色 + `21–80` 蓝；跨过 20% 边界颜色跳变、弧度平滑；81–100% 回退跟随系统
+- [ ] 十六进制：`F7D` / `277AF7` / `80FFD700` 三种长度各生效一次；半截输入（如 `277A`）只变提示色不落盘
+- [ ] 稳定性：反复切模式 + 反复拖区间滑杆，`ANR in com.android.systemui` 计数为 0
+
+---
+
 ## 附录 A：关键类索引（逆向实证）
 
 **宿主 APK（com.android.systemui，17.03.260226.r）**

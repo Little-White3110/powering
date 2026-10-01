@@ -76,6 +76,7 @@ python xref.py              # 交叉引用分析
   - 详见可行性分析报告 §11 与 `docs/superpowers/plans/2026-10-01-ring-window-layer-priority.md`。**层带表是本机实测值不是 ROM 契约**，换机型必须先用 `dumpsys window windows | grep mBaseLayer` 重测
 - **电池图标取色链路：已确认（2026-10-01）**。`MiuiBatteryMeterIconView.onDarkChangeInternal()` 是系统给电池图标上色的唯一位置，`mLightColor`/`mDarkColor`/`mDarkIntensity` + 四个 `mBattery*Color` 字段可直接反射读取；反色动画时钟在 `LightBarTransitionsController.animateIconTint`。**未覆盖**镂空样式 `MiuiHollowBatteryMeterIconView`。
   - ⚠️ **该链路在可行性分析报告中的章节尚未补写**（原引用写作"§12"，但 §12 现已被「灵动岛显隐信号与 ANR 事故」占用，见下条）。补写时请用 **§13**，结论目前只暂存在本条。
+- **自定义配色四模式（2026-10-02）**：`color_mode` 四值互斥（0 跟随系统 / 1 固定单色 / 2 按电池状态 5 路 / 3 按电量区间），代码与 14 条 JVM 单测已通过，**真机验收尚未执行**（六项清单见可行性分析报告 §15 末尾）。契约、存储格式与 `use_custom_color` 遗留推导都在 §15。计划：`docs/superpowers/plans/2026-10-02-ring-custom-color-modes.md`
 
 ## 不要做的事
 

@@ -5,8 +5,10 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
+import com.powerring.hole.ring.CustomColors
 import com.powerring.hole.ring.RingConfig
 import com.powerring.hole.ring.RingState
+import com.powerring.hole.ring.StateColors
 
 /**
  * SystemUI 进程内的模块配置缓存。
@@ -151,6 +153,18 @@ object HookPrefs {
             scale = toFloat(values[RingConfig.KEY_SCALE], d.scale),
             useCustomColor = toBool(values[RingConfig.KEY_USE_CUSTOM_COLOR], d.useCustomColor),
             customColor = toInt(values[RingConfig.KEY_CUSTOM_COLOR], d.customColor),
+            colorMode = toInt(values[RingConfig.KEY_COLOR_MODE], d.colorMode),
+            stateColors = StateColors(
+                normal = toInt(values[RingConfig.KEY_STATE_COLOR_NORMAL], 0),
+                low = toInt(values[RingConfig.KEY_STATE_COLOR_LOW], 0),
+                powerSave = toInt(values[RingConfig.KEY_STATE_COLOR_POWER_SAVE], 0),
+                performance = toInt(values[RingConfig.KEY_STATE_COLOR_PERFORMANCE], 0),
+                charging = toInt(values[RingConfig.KEY_STATE_COLOR_CHARGING], 0),
+            ),
+            // 区间表是一条字符串；解析函数内部已对坏数据逐段降级，不会抛
+            levelRanges = CustomColors.decodeRanges(
+                values[RingConfig.KEY_LEVEL_RANGES] as? String,
+            ),
         )
         ModuleLog.i("配置已重新加载: $cached")
         loadedOnce = true

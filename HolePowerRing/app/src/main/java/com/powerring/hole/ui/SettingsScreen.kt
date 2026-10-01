@@ -7,9 +7,9 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,18 +33,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.powerring.hole.BuildConfig
 import com.powerring.hole.R
+import com.powerring.hole.ring.ColorRange
+import com.powerring.hole.ring.CustomColors
+import com.powerring.hole.ring.MiuixPalette
 import com.powerring.hole.ring.RingConfig
+import com.powerring.hole.ring.StateColors
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
@@ -59,8 +61,9 @@ import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.icon.extended.Theme
 import top.yukonga.miuix.kmp.interfaces.ExperimentalScrollBarApi
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.preference.RangeSliderPreference
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -81,9 +84,8 @@ fun SettingsScreen(pagerState: PagerState) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var config by remember { mutableStateOf(PrefsStore.load(ctx)) }
-    var showColorPicker by remember { mutableStateOf(false) }
-    // 色盘内的临时编辑色，点确定才落盘
-    var editingColor by remember { mutableStateOf(Color(config.customColor)) }
+    // 当前正在编辑的颜色（标签 + 初值 + 确认回调）；null 表示弹窗关闭
+    var colorEditing by remember { mutableStateOf<ColorEditing?>(null) }
 
     data class TabInfo(val label: String, val icon: ImageVector)
     val tabs = listOf(
@@ -122,50 +124,14 @@ fun SettingsScreen(pagerState: PagerState) {
                     config = config,
                     update = { config = it },
                     contentPadding = contentPadding,
-                    onOpenColorPicker = {
-                        editingColor = Color(config.customColor)
-                        showColorPicker = true
-                    },
+                    onEditColor = { colorEditing = it },
                 )
                 2 -> AboutTabContent(ctx, contentPadding)
             }
         }
 
         // 色盘弹窗
-        OverlayDialog(
-            show = showColorPicker,
-            title = "选择环颜色",
-            onDismissRequest = { showColorPicker = false },
-        ) {
-            ColorPicker(
-                color = editingColor,
-                onColorChanged = { editingColor = it },
-                showPreview = true,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Spacer(modifier = Modifier.weight(1f))
-                Button(
-                    onClick = { showColorPicker = false },
-                ) {
-                    Text(text = "取消")
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Button(
-                    onClick = {
-                        val argb = editingColor.toArgb()
-                        PrefsStore.setInt(ctx, RingConfig.KEY_CUSTOM_COLOR, argb)
-                        config = config.copy(customColor = argb)
-                        showColorPicker = false
-                    },
-                ) {
-                    Text(text = "确定")
-                }
-            }
-        }
+        ColorPickerDialog(editing = colorEditing, onDismiss = { colorEditing = null })
     }
 }
 
@@ -296,8 +262,12 @@ private fun AppearanceTabContent(
     config: RingConfig,
     update: (RingConfig) -> Unit,
     contentPadding: PaddingValues,
-    onOpenColorPicker: () -> Unit,
+    onEditColor: (ColorEditing) -> Unit,
 ) {
+    // 打开共用色盘弹窗的简写，避免每一行都重复四个实参
+    fun editColor(label: String, argb: Int, onResult: (Int) -> Unit) =
+        buildColorEdit(onEditColor, label, argb, onResult)
+
     val listState = rememberLazyListState()
     Box {
         LazyColumn(state = listState, contentPadding = contentPadding) {
@@ -374,31 +344,141 @@ private fun AppearanceTabContent(
             }
             item(key = "colorCard") {
                 Card(modifier = Modifier.padding(horizontal = 12.dp)) {
-                    SwitchPreference(
-                        checked = config.useCustomColor,
-                        onCheckedChange = { enabled ->
-                            PrefsStore.setBoolean(ctx, RingConfig.KEY_USE_CUSTOM_COLOR, enabled)
-                            update(config.copy(useCustomColor = enabled))
-                        },
-                        title = "自定义环颜色",
-                        summary = "关闭时跟随系统电池图标颜色（普通/低电/省电/性能/充电）",
+                    OverlayDropdownPreference(
+                        items = COLOR_MODE_ITEMS,
+                        selectedIndex = config.colorMode.coerceIn(0, COLOR_MODE_ITEMS.lastIndex),
+                        title = "环颜色模式",
+                        summary = "四种方式互斥，同一时刻只有一套颜色生效",
                         enabled = config.ringEnabled,
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    ArrowPreference(
-                        title = "选择颜色",
-                        summary = "点击打开色盘自定义电量环颜色",
-                        enabled = config.ringEnabled && config.useCustomColor,
-                        onClick = onOpenColorPicker,
-                        endActions = {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(config.customColor)),
-                            )
+                        onSelectedIndexChange = { index ->
+                            PrefsStore.setInt(ctx, RingConfig.KEY_COLOR_MODE, index)
+                            update(config.copy(colorMode = index))
                         },
                     )
+                    when (config.colorMode) {
+                        RingConfig.MODE_FIXED_COLOR -> {
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            ArrowPreference(
+                                title = "选择颜色",
+                                summary = "打开色盘设置固定环颜色，可输入十六进制精确取值",
+                                enabled = config.ringEnabled,
+                                onClick = editColor(
+                                    label = "选择环颜色",
+                                    argb = config.customColor,
+                                    onResult = { argb ->
+                                        PrefsStore.setInt(ctx, RingConfig.KEY_CUSTOM_COLOR, argb)
+                                        update(config.copy(customColor = argb))
+                                    },
+                                ),
+                                endActions = { ColorSwatch(config.customColor) },
+                            )
+                        }
+
+                        RingConfig.MODE_BATTERY_STATE -> {
+                            STATE_ROWS.forEach { row ->
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                val current = row.get(config.stateColors)
+                                ArrowPreference(
+                                    title = row.title,
+                                    summary = if (current == 0) {
+                                        "未设置：${row.hint}"
+                                    } else {
+                                        "自定义 #${HexColor.format(current)}"
+                                    },
+                                    enabled = config.ringEnabled,
+                                    onClick = editColor(
+                                        label = "${row.title} 环颜色",
+                                        argb = current,
+                                        onResult = { argb ->
+                                            PrefsStore.setInt(ctx, row.key, argb)
+                                            val next = row.set(config.stateColors, argb)
+                                            update(config.copy(stateColors = next))
+                                        },
+                                    ),
+                                    endActions = { ColorSwatch(current) },
+                                )
+                            }
+                        }
+
+                        RingConfig.MODE_LEVEL_RANGE -> {
+                            val ranges = config.levelRanges
+                            if (ranges.isEmpty()) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                Text(
+                                    text = "暂无区间：此时环跟随系统电池图标色。",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            ranges.forEachIndexed { index, range ->
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                val persist: (List<ColorRange>) -> Unit = { next ->
+                                    PrefsStore.setString(
+                                        ctx,
+                                        RingConfig.KEY_LEVEL_RANGES,
+                                        CustomColors.encodeRanges(next),
+                                    )
+                                    update(config.copy(levelRanges = next))
+                                }
+                                RangeColorRow(
+                                    title = "区间 ${index + 1}",
+                                    range = range,
+                                    enabled = config.ringEnabled,
+                                    onDragged = { moved ->
+                                        update(
+                                            config.copy(
+                                                levelRanges = ranges.mapIndexed { i, r ->
+                                                    if (i == index) moved else r
+                                                },
+                                            ),
+                                        )
+                                    },
+                                    onCommitted = { moved ->
+                                        persist(
+                                            ranges.mapIndexed { i, r ->
+                                                if (i == index) moved else r
+                                            },
+                                        )
+                                    },
+                                    onColorClicked = editColor(
+                                        label = "区间 ${index + 1} 颜色",
+                                        argb = range.color,
+                                    ) { argb ->
+                                        persist(
+                                            ranges.mapIndexed { i, r ->
+                                                if (i == index) r.copy(color = argb) else r
+                                            },
+                                        )
+                                    },
+                                    onDelete = {
+                                        persist(ranges.filterIndexed { i, _ -> i != index })
+                                    },
+                                )
+                            }
+                            if (ranges.size < CustomColors.MAX_RANGES) {
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                Button(
+                                    onClick = {
+                                        // 新区间插到最前 = 优先级最高（命中按列表顺序）
+                                        val next = listOf(
+                                            ColorRange(1, 20, MiuixPalette.PRIMARY_DARK),
+                                        ) + ranges
+                                        PrefsStore.setString(
+                                            ctx,
+                                            RingConfig.KEY_LEVEL_RANGES,
+                                            CustomColors.encodeRanges(next),
+                                        )
+                                        update(config.copy(levelRanges = next))
+                                    },
+                                    enabled = config.ringEnabled,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                ) {
+                                    Text(text = "新增区间（最多 ${CustomColors.MAX_RANGES} 段）")
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -458,6 +538,8 @@ private fun AboutTabContent(
                         text = "提示：所有调节即时生效；息屏/AOD 期间自动隐藏圆环以防烧屏，" +
                             "状态栏自动收起（沉浸模式）时圆环同步收缩隐藏。" +
                             "横屏时圆环无法贴合挖孔，默认会自动恢复原生电池图标。" +
+                            "环颜色有四种互斥模式：跟随系统、固定单色、按电池状态、按电量区间；" +
+                            "未设置的状态色会自动跟随原生图标。" +
                             "若调节后环与挖孔有偏差，优先用「缩放」对齐半径，再用偏移微调中心。",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         fontSize = MiuixTheme.textStyles.body2.fontSize,
@@ -494,6 +576,151 @@ private fun AboutTabContent(
         )
     }
 }
+
+// ====================================================================
+// 颜色：模式表、状态色行表、色块、编辑入口
+// ====================================================================
+
+private val COLOR_MODE_ITEMS = listOf(
+    "跟随系统电池图标",
+    "固定单色",
+    "按电池状态",
+    "按电量区间",
+)
+
+/** 「按电池状态」的一行配置：显示名、配置 key、未设置时的回退说明。 */
+private data class StateRowSpec(
+    val title: String,
+    val key: String,
+    val hint: String,
+    val get: (StateColors) -> Int,
+    val set: (StateColors, Int) -> StateColors,
+)
+
+private val STATE_ROWS = listOf(
+    StateRowSpec(
+        "普通", RingConfig.KEY_STATE_COLOR_NORMAL, "跟随系统电池图标反色",
+        { it.normal }, { s, v -> s.copy(normal = v) },
+    ),
+    StateRowSpec(
+        "低电量", RingConfig.KEY_STATE_COLOR_LOW, "跟随系统低电色（无则 error 红）",
+        { it.low }, { s, v -> s.copy(low = v) },
+    ),
+    StateRowSpec(
+        "省电模式", RingConfig.KEY_STATE_COLOR_POWER_SAVE, "跟随系统省电色（无则琥珀）",
+        { it.powerSave }, { s, v -> s.copy(powerSave = v) },
+    ),
+    StateRowSpec(
+        "性能模式", RingConfig.KEY_STATE_COLOR_PERFORMANCE, "跟随系统性能色（无则橙）",
+        { it.performance }, { s, v -> s.copy(performance = v) },
+    ),
+    StateRowSpec(
+        "充电中", RingConfig.KEY_STATE_COLOR_CHARGING, "跟随系统充电色（无则 primary 蓝）",
+        { it.charging }, { s, v -> s.copy(charging = v) },
+    ),
+)
+
+/** 行尾色块。0（未设置）用半透明主色，与已设置的颜色区分开。 */
+@Composable
+private fun ColorSwatch(argb: Int) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(
+                if (argb == 0) MiuixTheme.colorScheme.primary.copy(alpha = 0.25f) else Color(argb),
+            ),
+    )
+}
+
+/**
+ * 一条电量区间：`RangeSliderPreference` 双端滑杆（0–100，整数步进）+ 行尾色块 + 删除。
+ *
+ * 与 `ConfigSlider` 同一套「真实按下」门控：miuix Slider 在首次组合时可能回调
+ * onValueChange / onValueChangeFinished，未按下的回调一律不落盘，否则一进页面
+ * 就把默认区间写进配置。拖动中只改内存态，松手才持久化。
+ */
+@Composable
+private fun RangeColorRow(
+    title: String,
+    range: ColorRange,
+    enabled: Boolean,
+    onDragged: (ColorRange) -> Unit,
+    onCommitted: (ColorRange) -> Unit,
+    onColorClicked: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var dragging by remember { mutableStateOf<ClosedFloatingPointRange<Float>?>(null) }
+    var touched by remember { mutableStateOf(false) }
+    val display = dragging ?: (range.start.toFloat()..range.end.toFloat())
+
+    val touchGate = Modifier.pointerInput(enabled) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent()
+                if (event.type == androidx.compose.ui.input.pointer.PointerEventType.Press) {
+                    touched = true
+                }
+            }
+        }
+    }
+
+    RangeSliderPreference(
+        value = display,
+        onValueChange = {
+            val snapped = it.start.roundToInt()..it.endInclusive.roundToInt()
+            dragging = snapped.start.toFloat()..snapped.endInclusive.toFloat()
+            if (touched) onDragged(ColorRange(snapped.start, snapped.endInclusive, range.color))
+        },
+        onValueChangeFinished = {
+            if (touched) {
+                dragging?.let {
+                    onCommitted(ColorRange(it.start.toInt(), it.endInclusive.toInt(), range.color))
+                }
+            }
+            touched = false
+            dragging = null
+        },
+        title = title,
+        summary = "色块改颜色，右端按钮删除本区间",
+        valueText = "${range.start}%–${range.end}%",
+        valueRange = 0f..100f,
+        steps = 99,
+        enabled = enabled,
+        modifier = touchGate,
+        endActions = {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Color(range.color))
+                    .clickable(enabled = enabled, onClick = onColorClicked),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = onDelete,
+                enabled = enabled,
+                modifier = Modifier.height(32.dp),
+            ) {
+                Text(text = "删除")
+            }
+        },
+    )
+}
+
+/**
+ * 打开共用色盘弹窗。返回一个可直接当 `onClick` 用的 lambda。
+ *
+ * 注意：`onResult` 捕获的是打开弹窗那一刻的 `config` 快照——弹窗打开期间
+ * 不会有并发的配置变更（所有写入都只发生在「确定」），因此 `copy` 不会覆盖掉
+ * 别的字段。
+ */
+private fun buildColorEdit(
+    onEditColor: (ColorEditing) -> Unit,
+    label: String,
+    argb: Int,
+    onResult: (Int) -> Unit,
+): () -> Unit = { onEditColor(ColorEditing(label, argb, onResult)) }
 
 /**
  * 滑杆设置项：拖动中仅更新页面内存态（实时显示数值），

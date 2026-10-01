@@ -47,6 +47,9 @@ android {
 }
 
 dependencies {
+    // 纯数据层（ring/CustomColors、ui/HexColor）的 JVM 单测；UI 与 Hook 侧仍靠真机验证
+    testImplementation("junit:junit:4.13.2")
+
     // Xposed API 仅在编译期可见，运行时由 LSPosed 提供
     compileOnly(project(":xposedstub"))
 
