@@ -44,8 +44,24 @@ object BatteryObserver {
                             RingState.level, RingState.charging,
                             ctx.powerManager().isPowerSaveMode,
                         )
-                    Intent.ACTION_SCREEN_ON -> RingState.setScreenOn(true)
+                    Intent.ACTION_SCREEN_ON -> {
+                        RingState.setScreenOn(true)
+                        // 冷启动后若还没读到过配置，屏幕点亮（说明用户在用机）就补读一次
+                        if (HookPrefs.needsRetry()) {
+                            ModuleLog.i("屏幕点亮，补读一次配置")
+                            HookPrefs.invalidate()
+                        }
+                    }
                     Intent.ACTION_SCREEN_OFF -> RingState.setScreenOn(false)
+                    Intent.ACTION_USER_PRESENT -> {
+                        // 冷启动时 SystemUI 先于解锁起来，此刻配置（凭据加密存储）
+                        // 还读不到，模块会退回默认值；解锁后补读一次，
+                        // 避免"重启后必须手动开关一次设置才生效"。
+                        if (HookPrefs.needsRetry()) {
+                            ModuleLog.i("用户已解锁，补读一次配置")
+                            HookPrefs.invalidate()
+                        }
+                    }
                     ACTION_CONFIG_CHANGED -> {
                         HookPrefs.invalidate()
                         RingState.invalidateAll()
@@ -59,6 +75,7 @@ object BatteryObserver {
             addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
             addAction(ACTION_CONFIG_CHANGED)
         }
         // 接收来自本模块配置页（另一应用进程/包）的显式广播，需要 EXPORTED
