@@ -18,7 +18,7 @@ import java.util.WeakHashMap
 /**
  * 环形电量的全局状态（SystemUI 进程单例）。
  *
- * 负责：配置缓存、电池状态、挖孔 View 注册、电量弧动画调度。
+ * 负责：配置缓存、电池状态、挖孔 View 注册、收起与环色动画调度。
  * 绘制本身委托给 [RingRenderer]。
  */
 object RingState {
@@ -57,6 +57,8 @@ object RingState {
     private var islandShowing: Boolean = false
 
     private var collapseAnimator: ValueAnimator? = null
+    private val collapseInterpolator = DecelerateInterpolator(1.5f)
+    private val COLLAPSE_DURATION_MS = 260L
 
     /** 挖孔填充色（= 状态栏图标色），决定使用浅色还是深色令牌 */
     @Volatile
@@ -69,15 +71,6 @@ object RingState {
     @Volatile
     var cutoutEverResolved: Boolean = false
         private set
-
-    /** 当前动画显示到的电量百分比（0..100） */
-    @Volatile
-    var animatedLevel: Float = 50f
-        private set
-
-    private var levelAnimator: ValueAnimator? = null
-    private val levelInterpolator = DecelerateInterpolator(1.5f)
-    private val COLLAPSE_DURATION_MS = 260L
 
     /**
      * 连 `DarkIconDispatcherImpl.getTintAnimationDuration()` 都拿不到时的最后兜底。
@@ -127,7 +120,7 @@ object RingState {
 
     private fun RingConfig.signature() =
         "$ringEnabled|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
-            "$useCustomColor|$customColor|$chargingGlow|$levelAnim|" +
+            "$useCustomColor|$customColor|" +
             "$collapseOnImmersive|$collapseOnIsland"
 
     // ---- 生命周期 ----
@@ -162,7 +155,7 @@ object RingState {
         this.powerSave = powerSave
         if (changed) {
             ModuleLog.i("电池状态: level=${this.level} charging=$charging powerSave=$powerSave")
-            startLevelAnimation(this.level.toFloat())
+            invalidateAll()
         }
     }
 
@@ -253,7 +246,7 @@ object RingState {
         invalidateAll()
     }
 
-    /** 照抄 startLevelAnimation 的「取消旧动画 → 平滑过渡」模式。 */
+    /** 「取消旧动画 → 平滑过渡」：环色过渡统一走这一条通道。 */
     private fun animateNormalColorTo(target: Int) {
         val start = normalColor
         colorAnimator?.let { if (it.isRunning) it.cancel() }
@@ -307,7 +300,7 @@ object RingState {
         return if (byImmersive || byIsland) 1f else 0f
     }
 
-    /** 照抄 startLevelAnimation 的「取消旧动画→立即到位或平滑过渡」模式。 */
+    /** 「取消旧动画→立即到位或平滑过渡」。 */
     private fun animateCollapseTo(target: Float) {
         val start = collapseProgress
         collapseAnimator?.let { if (it.isRunning) it.cancel() }
@@ -320,7 +313,7 @@ object RingState {
         }
         collapseAnimator = ValueAnimator.ofFloat(start, target).apply {
             duration = COLLAPSE_DURATION_MS
-            interpolator = levelInterpolator
+            interpolator = collapseInterpolator
             addUpdateListener {
                 collapseProgress = it.animatedValue as Float
                 invalidateAll()
@@ -416,28 +409,6 @@ object RingState {
             // 绘制异常绝不能影响系统挖孔本身的渲染
             ModuleLog.e("环形电量绘制异常", t)
         }
-    }
-
-    // ---- 动画与刷新 ----
-
-    private fun startLevelAnimation(target: Float) {
-        val c = config
-        val start = animatedLevel
-        val animator = levelAnimator
-        if (animator != null && animator.isRunning) animator.cancel()
-        if (!c.levelAnim || kotlin.math.abs(target - start) < 0.5f) {
-            animatedLevel = target
-            invalidateAll()
-            return
-        }
-        levelAnimator = ValueAnimator.ofFloat(start, target).apply {
-            duration = 360L
-            interpolator = levelInterpolator
-            addUpdateListener {
-                animatedLevel = it.animatedValue as Float
-                invalidateAll()
-            }
-        }.also { it.start() }
     }
 
     /** 请求所有挖孔 View 重绘（postInvalidate 可在任意线程调用）。 */

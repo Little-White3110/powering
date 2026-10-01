@@ -47,8 +47,6 @@ class ConfigProvider : ContentProvider() {
     private fun valueOf(prefs: SharedPreferences, key: String): Any? = when (key) {
         RingConfig.KEY_RING_ENABLED -> prefs.getBoolean(key, RingConfig.DEFAULT.ringEnabled)
         RingConfig.KEY_HIDE_BATTERY -> prefs.getBoolean(key, RingConfig.DEFAULT.hideBattery)
-        RingConfig.KEY_LEVEL_ANIM -> prefs.getBoolean(key, RingConfig.DEFAULT.levelAnim)
-        RingConfig.KEY_CHARGING_GLOW -> prefs.getBoolean(key, RingConfig.DEFAULT.chargingGlow)
         RingConfig.KEY_COLLAPSE_ON_IMMERSIVE ->
             prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnImmersive)
         RingConfig.KEY_COLLAPSE_ON_ISLAND ->
@@ -87,8 +85,6 @@ class ConfigProvider : ContentProvider() {
         val ALL_KEYS = arrayOf(
             RingConfig.KEY_RING_ENABLED,
             RingConfig.KEY_HIDE_BATTERY,
-            RingConfig.KEY_LEVEL_ANIM,
-            RingConfig.KEY_CHARGING_GLOW,
             RingConfig.KEY_COLLAPSE_ON_IMMERSIVE,
             RingConfig.KEY_COLLAPSE_ON_ISLAND,
             RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE,

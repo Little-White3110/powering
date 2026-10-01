@@ -8,9 +8,8 @@ import com.powerring.hole.core.ModuleLog
 /**
  * 挖孔环形电量绘制器（方案 A：直接挂在系统挖孔装饰 View 的 onDraw 之后）。
  *
- * 几何与动效规范对齐 miuix CircularProgressIndicator：
+ * 几何规范对齐 miuix CircularProgressIndicator：
  * - 圆形进度，起点 -90°（12 点方向），圆角线帽（StrokeCap.ROUND）
- * - 充电时两层低透明度外扩弧模拟辉光（不使用 setShadowLayer，兼容性更好）
  *
  * 配色策略（2026-10-01 改造）：
  * 1. 开启自定义色 → 固定用 [RingConfig.customColor]
@@ -41,16 +40,6 @@ object RingRenderer {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
-    private val glowOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        alpha = 40
-    }
-    private val glowInnerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        alpha = 72
-    }
 
     @Volatile
     private var clipRiskLogged = false
@@ -63,9 +52,7 @@ object RingRenderer {
         val stroke = config.strokeWidthDp * density
         val gap = GAP_DP * density
 
-        // 辉光会再向外扩两圈，解析几何时把这部分预算进去，用于判断裁切风险
-        val glowBudget = if (config.chargingGlow && state.charging) stroke * 2.2f else 0f
-        val hole = CutoutGeometry.resolve(view, gap + stroke / 2f + glowBudget) ?: return
+        val hole = CutoutGeometry.resolve(view, gap + stroke / 2f) ?: return
         state.markCutoutResolved()
 
         if (hole.clipRisk && !clipRiskLogged) {
@@ -111,7 +98,7 @@ object RingRenderer {
         val cx = hole.cx + config.offsetXDp * density
         val cy = hole.cy + config.offsetYDp * density
         val radius = baseRadius * expand
-        val fraction = (state.animatedLevel / 100f).coerceIn(0f, 1f)
+        val fraction = (state.level / 100f).coerceIn(0f, 1f)
 
         if (!diagLogged) {
             diagLogged = true
@@ -131,12 +118,7 @@ object RingRenderer {
 
             if (fraction <= 0f) return
 
-            // 2) 充电辉光（两圈外扩低透明弧）
-            if (config.chargingGlow && state.charging) {
-                drawGlowArc(canvas, cx, cy, radius, fraction, stroke, progressColor)
-            }
-
-            // 3) 电量进度弧
+            // 2) 电量进度弧
             progressPaint.strokeWidth = stroke
             progressPaint.color = progressColor
             if (fraction >= 0.999f) {
@@ -159,32 +141,5 @@ object RingRenderer {
     private fun scaleAlpha(color: Int, factor: Float): Int {
         val a = (android.graphics.Color.alpha(color) * factor).toInt().coerceIn(0, 255)
         return (a shl 24) or (color and 0x00FFFFFF)
-    }
-
-    private fun drawGlowArc(
-        canvas: Canvas,
-        cx: Float,
-        cy: Float,
-        radius: Float,
-        fraction: Float,
-        stroke: Float,
-        color: Int,
-    ) {
-        val sweep = 360f * fraction
-        glowOuterPaint.color = color
-        glowOuterPaint.strokeWidth = stroke * 2.4f
-        glowInnerPaint.color = color
-        glowInnerPaint.strokeWidth = stroke * 1.5f
-        // 辉光半径依次外扩，宽度差即羽化范围；参数为 left, top, right, bottom
-        val outerR = radius + stroke
-        val innerR = radius + stroke * 0.35f
-        canvas.drawArc(
-            cx - outerR, cy - outerR, cx + outerR, cy + outerR,
-            -90f, sweep, false, glowOuterPaint,
-        )
-        canvas.drawArc(
-            cx - innerR, cy - innerR, cx + innerR, cy + innerR,
-            -90f, sweep, false, glowInnerPaint,
-        )
     }
 }

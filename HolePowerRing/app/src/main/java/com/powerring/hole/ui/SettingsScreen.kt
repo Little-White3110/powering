@@ -223,28 +223,6 @@ private fun SwitchTabContent(
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SwitchPreference(
-                        checked = config.levelAnim,
-                        onCheckedChange = { enabled ->
-                            PrefsStore.setBoolean(ctx, RingConfig.KEY_LEVEL_ANIM, enabled)
-                            update(config.copy(levelAnim = enabled))
-                        },
-                        title = "电量变化动画",
-                        summary = "电量增减时弧度平滑过渡",
-                        enabled = config.ringEnabled,
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    SwitchPreference(
-                        checked = config.chargingGlow,
-                        onCheckedChange = { enabled ->
-                            PrefsStore.setBoolean(ctx, RingConfig.KEY_CHARGING_GLOW, enabled)
-                            update(config.copy(chargingGlow = enabled))
-                        },
-                        title = "充电高亮辉光",
-                        summary = "充电时圆环显示品牌蓝与外扩光效",
-                        enabled = config.ringEnabled,
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                    SwitchPreference(
                         checked = config.collapseOnImmersive,
                         onCheckedChange = { enabled ->
                             PrefsStore.setBoolean(

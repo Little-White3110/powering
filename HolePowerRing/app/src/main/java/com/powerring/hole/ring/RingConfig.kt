@@ -11,10 +11,6 @@ data class RingConfig(
     val ringEnabled: Boolean = true,
     /** 隐藏状态栏原电池图标（仅在环可用时生效） */
     val hideBattery: Boolean = true,
-    /** 电量变化时环弧平滑动画 */
-    val levelAnim: Boolean = true,
-    /** 充电时高亮光效 */
-    val chargingGlow: Boolean = true,
     /** 状态栏被系统自动收起（沉浸模式）时，环向内收缩并隐藏 */
     val collapseOnImmersive: Boolean = true,
     /** 灵动岛（超级岛）显示时，圆环像全屏沉浸时一样向内收缩并淡出 */
@@ -39,8 +35,6 @@ data class RingConfig(
 
         const val KEY_RING_ENABLED = "ring_enabled"
         const val KEY_HIDE_BATTERY = "hide_battery"
-        const val KEY_LEVEL_ANIM = "level_anim"
-        const val KEY_CHARGING_GLOW = "charging_glow"
         const val KEY_COLLAPSE_ON_IMMERSIVE = "collapse_on_immersive"
         const val KEY_COLLAPSE_ON_ISLAND = "collapse_on_island"
         const val KEY_RESTORE_BATTERY_ON_LANDSCAPE = "restore_battery_on_landscape"

@@ -24,8 +24,6 @@ object PrefsStore {
         return RingConfig(
             ringEnabled = p.getBoolean(RingConfig.KEY_RING_ENABLED, true),
             hideBattery = p.getBoolean(RingConfig.KEY_HIDE_BATTERY, true),
-            levelAnim = p.getBoolean(RingConfig.KEY_LEVEL_ANIM, true),
-            chargingGlow = p.getBoolean(RingConfig.KEY_CHARGING_GLOW, true),
             collapseOnImmersive = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_IMMERSIVE, true),
             collapseOnIsland = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_ISLAND, false),
             restoreBatteryOnLandscape = p.getBoolean(

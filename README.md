@@ -9,7 +9,6 @@
 - **挖孔环形电量**：Hook SystemUI 挖孔装饰覆盖层（`DisplayCutoutBaseView`），在真实挖孔几何外圈绘制电量弧
 - **隐藏原电池图标**：Hook `MiuiStatusBatteryContainer.setIsHideBattery(Boolean)`，复用系统内置的隐藏路径（灵动岛出现时系统使用的同一机制），布局重算与隐私圆点避让由系统完成
 - **电量数据**：直接复用 SystemUI 内部 `BatteryController` 回调，无需自建广播监听
-- **电量变化平滑动画**、**充电高亮光效**（可开关）
 - **配置页**：基于 miuix（HyperOS 风格 Compose 组件）的设置界面，跨进程 SharedPreferences 下发配置
 
 ## 仓库结构
