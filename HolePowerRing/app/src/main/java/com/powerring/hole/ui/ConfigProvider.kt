@@ -49,6 +49,8 @@ class ConfigProvider : ContentProvider() {
         RingConfig.KEY_HIDE_BATTERY -> prefs.getBoolean(key, RingConfig.DEFAULT.hideBattery)
         RingConfig.KEY_LEVEL_ANIM -> prefs.getBoolean(key, RingConfig.DEFAULT.levelAnim)
         RingConfig.KEY_CHARGING_GLOW -> prefs.getBoolean(key, RingConfig.DEFAULT.chargingGlow)
+        RingConfig.KEY_COLLAPSE_ON_IMMERSIVE ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnImmersive)
         RingConfig.KEY_USE_CUSTOM_COLOR -> prefs.getBoolean(key, RingConfig.DEFAULT.useCustomColor)
         RingConfig.KEY_STROKE_WIDTH -> prefs.getFloat(key, RingConfig.DEFAULT.strokeWidthDp)
         RingConfig.KEY_OFFSET_X -> prefs.getFloat(key, RingConfig.DEFAULT.offsetXDp)
@@ -83,6 +85,7 @@ class ConfigProvider : ContentProvider() {
             RingConfig.KEY_HIDE_BATTERY,
             RingConfig.KEY_LEVEL_ANIM,
             RingConfig.KEY_CHARGING_GLOW,
+            RingConfig.KEY_COLLAPSE_ON_IMMERSIVE,
             RingConfig.KEY_STROKE_WIDTH,
             RingConfig.KEY_OFFSET_X,
             RingConfig.KEY_OFFSET_Y,

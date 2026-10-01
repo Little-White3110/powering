@@ -91,6 +91,9 @@ object HookPrefs {
             hideBattery = toBool(values[RingConfig.KEY_HIDE_BATTERY], d.hideBattery),
             levelAnim = toBool(values[RingConfig.KEY_LEVEL_ANIM], d.levelAnim),
             chargingGlow = toBool(values[RingConfig.KEY_CHARGING_GLOW], d.chargingGlow),
+            collapseOnImmersive = toBool(
+                values[RingConfig.KEY_COLLAPSE_ON_IMMERSIVE], d.collapseOnImmersive,
+            ),
             strokeWidthDp = toFloat(values[RingConfig.KEY_STROKE_WIDTH], d.strokeWidthDp),
             offsetXDp = toFloat(values[RingConfig.KEY_OFFSET_X], d.offsetXDp),
             offsetYDp = toFloat(values[RingConfig.KEY_OFFSET_Y], d.offsetYDp),

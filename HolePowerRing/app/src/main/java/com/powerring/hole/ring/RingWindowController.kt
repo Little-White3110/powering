@@ -50,6 +50,7 @@ object RingWindowController {
         val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager = wm
 
+        var firstDispatchLogged = false
         val view = PowerRingView(context.applicationContext).apply {
             // 收到 insets 后按挖孔安全区高度调整窗口高度
             setOnApplyWindowInsetsListener { v, insets ->
@@ -62,6 +63,17 @@ object RingWindowController {
                     runCatching { wm.updateViewLayout(v, lp) }
                         .onFailure { ModuleLog.e("更新环窗口高度失败", it) }
                 }
+                val statusTop = runCatching {
+                    insets.getInsets(WindowInsets.Type.statusBars()).top
+                }.getOrDefault(-1)
+                if (!firstDispatchLogged) {
+                    firstDispatchLogged = true
+                    ModuleLog.i("环窗口首次 insets: cutoutTop=$cutoutTop statusTop=$statusTop")
+                }
+                // 本机实测：环窗口(2009)覆盖状态栏区域，系统不派发 statusBars insets，
+                // statusTop 恒为 0，不能作为收起信号。收起检测改由 ImmersiveProbeHook
+                // （Hook StatusBarWindowStateController 的 setWindowState 回调）驱动，
+                // 此处保持禁用以防双写抖动。statusTop 计算与首次日志保留，方便换机型复查。
                 v.postInvalidateOnAnimation()
                 insets
             }

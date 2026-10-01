@@ -230,6 +230,19 @@ private fun SwitchTabContent(
                         summary = "充电时圆环显示品牌蓝与外扩光效",
                         enabled = config.ringEnabled,
                     )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SwitchPreference(
+                        checked = config.collapseOnImmersive,
+                        onCheckedChange = { enabled ->
+                            PrefsStore.setBoolean(
+                                ctx, RingConfig.KEY_COLLAPSE_ON_IMMERSIVE, enabled,
+                            )
+                            update(config.copy(collapseOnImmersive = enabled))
+                        },
+                        title = "状态栏收起时隐藏圆环",
+                        summary = "观看视频/图片等状态栏自动收起的场景，圆环向内收缩并淡出；状态栏恢复时弹回",
+                        enabled = config.ringEnabled,
+                    )
                 }
             }
             item(key = "systemTitle") {
@@ -440,7 +453,8 @@ private fun AboutTabContent(
             item(key = "tipCard") {
                 Card(modifier = Modifier.padding(horizontal = 12.dp)) {
                     Text(
-                        text = "提示：所有调节即时生效；息屏/AOD 期间自动隐藏圆环以防烧屏。" +
+                        text = "提示：所有调节即时生效；息屏/AOD 期间自动隐藏圆环以防烧屏，" +
+                            "状态栏自动收起（沉浸模式）时圆环同步收缩隐藏。" +
                             "若调节后环与挖孔有偏差，优先用「缩放」对齐半径，再用偏移微调中心。",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         fontSize = MiuixTheme.textStyles.body2.fontSize,

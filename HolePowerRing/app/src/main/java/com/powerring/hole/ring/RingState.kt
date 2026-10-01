@@ -36,6 +36,19 @@ object RingState {
     @Volatile var screenOn: Boolean = true
         private set
 
+    // ---- 沉浸收起 ----
+
+    /** 收起进度：0f 完整显示，1f 完全收缩不可见（渲染端按此收缩半径并衰减透明度） */
+    @Volatile
+    var collapseProgress: Float = 0f
+        private set
+
+    /** 最近一次系统上报的状态栏收起状态（沉浸模式） */
+    @Volatile
+    private var statusBarCollapsed: Boolean = false
+
+    private var collapseAnimator: ValueAnimator? = null
+
     /** 挖孔填充色（= 状态栏图标色），决定使用浅色还是深色令牌 */
     @Volatile
     var tintColor: Int = 0xFFFFFFFF.toInt()
@@ -55,6 +68,7 @@ object RingState {
 
     private var levelAnimator: ValueAnimator? = null
     private val levelInterpolator = DecelerateInterpolator(1.5f)
+    private val COLLAPSE_DURATION_MS = 260L
 
     val config: RingConfig
         get() = HookPrefs.get()
@@ -64,7 +78,8 @@ object RingState {
     private var lastConfigSig: String = ""
 
     private fun RingConfig.signature() =
-        "$ringEnabled|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|$useCustomColor|$customColor|$chargingGlow|$levelAnim"
+        "$ringEnabled|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
+            "$useCustomColor|$customColor|$chargingGlow|$levelAnim|$collapseOnImmersive"
 
     // ---- 生命周期 ----
 
@@ -110,6 +125,39 @@ object RingState {
         }
     }
 
+    /**
+     * 状态栏是否被系统自动收起（沉浸模式）。
+     * 由环窗口 insets 监听（或兜底探针）调用，二者均在 SystemUI 主线程。
+     */
+    fun setStatusBarCollapsed(collapsed: Boolean) {
+        if (statusBarCollapsed == collapsed) return
+        statusBarCollapsed = collapsed
+        ModuleLog.i("状态栏沉浸收起状态: collapsed=$collapsed")
+        animateCollapseTo(collapseTarget())
+    }
+
+    private fun collapseTarget(): Float =
+        if (statusBarCollapsed && config.collapseOnImmersive) 1f else 0f
+
+    /** 照抄 startLevelAnimation 的「取消旧动画→立即到位或平滑过渡」模式。 */
+    private fun animateCollapseTo(target: Float) {
+        val start = collapseProgress
+        collapseAnimator?.let { if (it.isRunning) it.cancel() }
+        if (!config.collapseOnImmersive || kotlin.math.abs(target - start) < 0.01f) {
+            collapseProgress = target
+            invalidateAll()
+            return
+        }
+        collapseAnimator = ValueAnimator.ofFloat(start, target).apply {
+            duration = COLLAPSE_DURATION_MS
+            interpolator = levelInterpolator
+            addUpdateListener {
+                collapseProgress = it.animatedValue as Float
+                invalidateAll()
+            }
+        }.also { it.start() }
+    }
+
     /** 挖孔几何首次解析成功的回调（由隐藏 Hook 注册，用于时序补偿）。 */
     @Volatile
     var onCutoutResolved: (() -> Unit)? = null
@@ -141,6 +189,7 @@ object RingState {
         val sig = c.signature()
         if (sig != lastConfigSig) {
             lastConfigSig = sig
+            animateCollapseTo(collapseTarget())
             invalidateAll()
         }
         if (!c.ringEnabled || !screenOn) return

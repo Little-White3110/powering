@@ -44,6 +44,13 @@ object SystemUiHooks {
             ModuleLog.e("电池图标隐藏 Hook 安装异常", t)
         }
 
+        // 沉浸收起兜底探针（环窗口自身不派发 statusBars insets，见可行性分析报告）
+        try {
+            ImmersiveProbeHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("沉浸探针安装异常", t)
+        }
+
         // Application.onCreate 后拿到 Context：注册电量监听 + 添加环窗口
         XposedHelpers.findAndHookMethod(
             Application::class.java,
