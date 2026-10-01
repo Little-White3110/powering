@@ -250,6 +250,71 @@ API 选择：Modern Xposed API 102（参考工程内 [lsposed-dev-guide.md](file
 
 ---
 
+## 10. 沉浸模式收起检测（2026-10-01 真机验证）
+
+**目标**：系统进入沉浸模式（全屏看视频/图片时状态栏自动收起）时，环形电量向内收缩淡出；状态栏恢复时弹回。
+
+**结论：已实现并通过真机验证**（25102RKBEC / 系统界面 17.03.260226.r）。但最终采用**不是**初期设计所假设的 insets 方案——该方案在本机被实测淘汰。
+
+### 10.1 三个候选信号的实测淘汰过程
+
+| 候选信号 | 实测结果 | 判定 |
+|---|---|---|
+| 环窗口（type=2009）自身的 `WindowInsets.Type.statusBars().top` | 桌面状态栏**可见**时也恒为 `0`（同一帧 `cutoutTop=144` 正常） | ❌ 不可用 |
+| `StatusBarWindowView.onApplyWindowInsets` 的 `statusBars` | 恒为 `visible=false top=0 mTopInset=0` | ❌ 不可用 |
+| `StatusBarWindowStateController` 的 CommandQueue 回调 `setWindowState(III)` | 与"收起/唤出/再收起"逐拍对应 | ✅ **采用** |
+
+前两者失效的共同原因：insets 是"被遮挡方"的视角。环窗口覆盖在状态栏之上（WMS 认为状态栏对它不可见），而状态栏窗口**自己就是该 inset 的提供方**，因此两者都拿不到有效的 statusBars 尺寸。**这推翻了原计划"用环窗口 insets 当检测信号"的核心假设**，属原计划 Task 4 已预设的兜底分支（Task 8）。
+
+### 10.2 采用方案（关键签名）
+
+- Hook 类：`com.android.systemui.statusbar.window.StatusBarWindowStateController$commandQueueCallback$1`
+- Hook 方法：`setWindowState(int displayId, int window, int state)`
+- 参数语义（`android.app.StatusBarManager`）：`window=1` = `WINDOW_STATUS_BAR`，`window=2` = `WINDOW_NAVIGATION_BAR`；`state` 取 `0=SHOWING / 1=HIDING / 2=HIDDEN`
+- 只跟随 `window == 1`；`state` 遇到未知取值保持现状（不冒险）
+- **无需 armed 门控**：该通知是双向显式信号（`state=0` 必定恢复），不存在"信号卡死把环永久藏掉"的风险；若机型不派发该回调，探针从不调用 `RingState`，环保持常显——安全降级
+
+真机日志（图库 `immersiveSticky`，三次收起/唤出循环）：
+
+```
+21:10:49.559 沉浸探针[setWindowState]: displayId=0 window=1 state=2 windowState=2
+21:10:49.559 沉浸探针驱动: collapsed=true
+21:10:49.559 状态栏沉浸收起状态: collapsed=true
+21:10:50.469 沉浸探针[setWindowState]: displayId=0 window=1 state=0 windowState=0
+21:10:50.469 沉浸探针驱动: collapsed=false
+21:10:50.470 状态栏沉浸收起状态: collapsed=false
+```
+
+注意 `window=1` 的通知总是先于 `window=2` 到达，与 `WINDOW_STATUS_BAR=1` 的定义一致（`immersiveSticky` 会把状态栏与导航栏一起收起，故两者成对出现）。
+
+### 10.3 动画
+
+半径按 `1 - collapseProgress` 向内收敛、透明度同步淡出；260ms，`DecelerateInterpolator(1.5f)`（与电量弧动画同一插值器）。进度值 `RingState.collapseProgress`（0f 完整 / 1f 完全收起），由 `ValueAnimator` 驱动并在每帧 `invalidateAll()`。
+
+### 10.4 类名更正（重要）
+
+计划初稿给出的两个候选类名在本机**均不存在**，按原样实现会直接落到"找不到类"的降级分支：
+
+| 计划初稿候选 | 实际 |
+|---|---|
+| `com.android.systemui.statusbar.phone.StatusBarWindowView` | ❌ 不存在 |
+| `com.android.systemui.statusbar.phone.MiuiStatusBarWindowView` | ❌ 不存在 |
+| — | ✅ `com.android.systemui.statusbar.window.StatusBarWindowView`（`classes3.dex`，super=`FrameLayout`） |
+
+`MiuiStatusBarWindowView` 仅作为一个字符串常量出现在 `StatusBarWindowView` 内部，**不是类名**。
+
+### 10.5 陷阱记录：不要 Hook View 的继承方法
+
+`XposedHelpers.findAndHookMethod` 会沿父类链解析方法。`StatusBarWindowView` 并未声明 `setTranslationY` / `setVisibility`，对它们下 Hook 实际绑到的是 `android.view.View` 的同名方法，于是会在 SystemUI 进程内对**每一个 View** 生效：
+
+- `armed` 之类的安全门控会被任意 View 的 `setVisibility(VISIBLE)` 顶开，形同虚设；
+- 任意 View 的 `translationY < -4px`（下拉通知栏动画等）都会误判为"已收起"，**状态栏明明在、环却被藏掉**；
+- 给 SystemUI 调用最频繁的方法各加一次 Xposed 回调，直接违背"不拖垮 SystemUI 进程"的最高优先级。
+
+**约定：新增 Hook 前先确认目标方法是目标类自身声明的**（`work/dump_class.py` 可直接核对）。
+
+---
+
 ## 附录 A：关键类索引（逆向实证）
 
 **宿主 APK（com.android.systemui，17.03.260226.r）**

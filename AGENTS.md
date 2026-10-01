@@ -64,8 +64,9 @@ python xref.py              # 交叉引用分析
 ## 已知待验证项（别当成已解决）
 
 - 挖孔覆盖层窗口是否有足够边距绘制外环，需真机动态验证
-- 本机状态栏电池走传统 MIUI View 管线还是新 Compose 管线，两条管线在逆向产物中都存在，需 dump 视图层级确认
+- **状态栏电池管线：已确认（2026-10-01）走传统 MIUI View 管线**（原为待验证项）。真机日志中 `MiuiStatusBatteryContainer` 实际实例化，视图链为 `MiuiStatusBatteryContainer <- MiuiNotificationStatusContainer <- ... <- ComposeView <- StatusBarWindowView`，`setIsHideBattery` 原生路径生效
 - 仅适配系统界面 17.03.260226.r / 插件 18.2.2.2.0；其他版本类名与方法签名可能不同，反射处要做好找不到类时的降级
+- 沉浸收起检测已在 25102RKBEC 验证通过，但**信号源与最初设计不同**：环窗口（type=2009）不派发 `statusBars` insets（`statusTop` 恒为 0），实际改用 `StatusBarWindowStateController$commandQueueCallback$1.setWindowState(III)`。该项版本敏感，换机型须先用 `work/dump_class.py` 核对类名与方法签名（详见可行性分析报告 §10）
 
 ## 不要做的事
 
