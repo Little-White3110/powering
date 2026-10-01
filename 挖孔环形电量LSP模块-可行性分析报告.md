@@ -401,6 +401,62 @@ SystemUI 是"宿主 + 运行时加载插件"结构，插件 Startable 一定在�
 - 本机 `type=2009` 在 `mAttrs` 中显示为 `ty=KEYGUARD_DIALOG`，`RingWindowController` 中"TYPE_KEYGUARD_DIALOG 槽位，MIUI 复用"的注释**准确无误**。
 - 抬到 `type=2006` 后环会盖过 `StatusBar`(151000)/`NotificationShade`(171000)/`NotificationModalWindowManager`(181000) 三带。环是 `TRANSLUCENT` 窗口、只在挖孔周画像素，实际遮挡面积极小；但 **`TYPE_SYSTEM_ALERT` 在锁屏/AOD 下是否被系统隐藏尚未验证**，是本修复的唯一未知项。
 - 本次取证 adb 为普通 shell 权限（无 root），**无法用 adb 重启 SystemUI**；安装新构建后须用设置页「重启系统界面」按钮复验。
+- **抬层结论已真机验收（2026-10-01）**：环已在灵动岛之上；锁屏、息屏（AOD）显示均正常，§11.6 上一条的未知项已排除。
+
+---
+
+## 12. 灵动岛显隐信号 与 一次 SystemUI ANR 事故（2026-10-01）
+
+**需求**：新增开关「有岛时隐藏圆环」——灵动岛（超级岛）显示时，圆环像全屏沉浸时一样向内收缩淡出，岛收起后弹回。
+
+**最终采用**：宿主侧 `MiuiBatteryMeterView.updateIslandShowing(ZZZ)`（详见 §12.3）。
+
+### 12.1 四个候选信号源的淘汰过程
+
+| 候选 | 位置 | 实测/分析结果 | 判定 |
+|---|---|---|---|
+| `DynamicIslandBackgroundView.setVisibility` | 插件 | 该类**自身声明了** `setVisibility`（super=FrameLayout），挂上去本身安全；但它**只在岛显示时被设成 VISIBLE**，岛收起时不经过它 ⇒ 只有 `showing=true`，没有 `false`，环藏下去再也回不来 | ❌ 语义不完整 |
+| `DynamicIslandWindowView.setVisibility` | 插件 | 该类只声明 `setDying(Z)`，**没有声明 `setVisibility`**。对它 Hook "setVisibility" 会沿父类链落到 `android.view.View.setVisibility`，在 SystemUI 内对**每一个 View** 生效（§10.5 同款陷阱） | ❌ 绝对禁止 |
+| `DynamicIslandWindowController$listenForVisibility$1$2.emit(int, …)` | 插件 | 语义**完全正确**：`work/method_refs.py` 转储显示它先打 `"update window Visibility "`，随后调 `FrameLayout.setVisibility`，是岛窗口根 View 显隐的唯一设置点。但**获取它必须 Hook `ClassLoader.loadClass` 并在回调里做反射枚举 + 安装 Hook** ⇒ 见 §12.2 的 ANR 事故 | ❌ 触发事故 |
+| **`MiuiBatteryMeterView.updateIslandShowing(ZZZ)`** | **宿主** | 宿主侧类（与 BatteryHideHook 已稳定 Hook 的 `onDarkChanged` 同类）；方法内部**写 `mIsIslandShowing` 字段**；update 型方法，**两个方向都会到达** | ✅ **采用** |
+
+### 12.2 ANR 事故记录（重大，纪律来源）
+
+**现象**：装上插件侧信号源版本后重启 SystemUI，**手机界面直接卡死**；`logcat` 反复出现
+`ANR in com.android.systemui / Reason: Process ... failed to complete startup`，SystemUI 反复重启仍 ANR。
+
+**根因**：实现在 `ClassLoader.loadClass` 的 after 回调里做了两件重活：
+
+1. `cls.declaredMethods` —— 强制解析方法签名，进而触发插件内被混淆的协程类型（`M0/e`）的**二次类加载**；
+2. 紧接着 `XposedHelpers.findAndHookMethod` —— 安装 Hook 会触发 ART **deoptimize / suspend-all**。
+
+在**类加载临界区内**触发二次类加载并让 ART 挂起全部线程，是稳定的死锁配方。模块日志停在
+`灵动岛显隐探针已挂载（等待插件可见性/高度流类加载）` 之后即再无输出，与"卡在 loadClass 回调里"一致。
+
+> **纪律（已同步进 AGENTS.md）：永远不要在 `ClassLoader.loadClass` 的回调里做反射枚举或安装 Hook。**
+> 需要跨 ClassLoader 的信息时，优先找**宿主侧**等价类；宿主侧实在没有时，也必须把重活
+> `post` 到主线程队列，绝不在回调内同步执行。
+
+**恢复方式**：重装安全版 APK → `adb reboot`（adb 无 root 不能单独重启 SystemUI）。
+
+### 12.3 采用方案与真机验证
+
+Hook 点：`com.android.systemui.statusbar.views.MiuiBatteryMeterView.updateIslandShowing(ZZZ)V`
+（Boolean×3），`afterHookedMethod` 内读 `mIsIslandShowing` 字段 → 驱动 `RingState.setIslandShowing`。
+
+- 用**宿主 ClassLoader** 直接 `findClassIfExists` 取类，**不需要任何 loadClass 拦截**；
+- 只 Hook 该类**自身声明**的方法；
+- 用父链过滤到 `MiuiStatusBatteryContainer` 内的实例（状态栏那一个），避免状态栏/控制中心多实例状态不同步互相打架；
+- 降级方向：找不到类/字段读不到一律记日志后放弃，**环保持常显**（比"该藏没藏"安全）。
+
+真机实测（媒体岛，播放→停止）：
+
+```
+灵动岛显隐驱动: showing=true   → 灵动岛显示状态: showing=true  沉浸=false 收起目标=1.0   （环收起）
+灵动岛显隐驱动: showing=false  → 灵动岛显示状态: showing=false 沉浸=false 收起目标=0.0   （环恢复）
+```
+
+**两个方向都到达，且该信号对媒体岛同样触发**（不限于充电岛）。全程 `ANR in com.android.systemui` 计数为 0。
 
 ---
 

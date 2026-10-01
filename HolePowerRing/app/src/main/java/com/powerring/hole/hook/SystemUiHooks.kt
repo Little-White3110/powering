@@ -20,7 +20,7 @@ import de.robv.android.xposed.XposedHelpers
  *
  * 收起通路有两个信号源，都收敛到 RingState 的同一条 collapseProgress 通道：
  * [ImmersiveProbeHook]（状态栏窗口 shown/hidden）与 [IslandVisibilityHook]
- * （灵动岛背景 View 的 setVisibility）。
+ * （MiuiBatteryMeterView.updateIslandShowing，宿主侧信号）。
  */
 object SystemUiHooks {
 

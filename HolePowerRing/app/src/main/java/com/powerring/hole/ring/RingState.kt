@@ -260,8 +260,9 @@ object RingState {
     fun setStatusBarCollapsed(collapsed: Boolean) {
         if (statusBarCollapsed == collapsed) return
         statusBarCollapsed = collapsed
-        ModuleLog.i("状态栏沉浸收起状态: collapsed=$collapsed")
-        animateCollapseTo(collapseTarget())
+        val target = collapseTarget()
+        ModuleLog.i("状态栏沉浸收起状态: collapsed=$collapsed 岛显示=$islandShowing 收起目标=$target")
+        animateCollapseTo(target)
     }
 
     /**
@@ -273,8 +274,9 @@ object RingState {
     fun setIslandShowing(showing: Boolean) {
         if (islandShowing == showing) return
         islandShowing = showing
-        ModuleLog.i("灵动岛显示状态: showing=$showing")
-        animateCollapseTo(collapseTarget())
+        val target = collapseTarget()
+        ModuleLog.i("灵动岛显示状态: showing=$showing 沉浸=$statusBarCollapsed 收起目标=$target")
+        animateCollapseTo(target)
     }
 
     /** 两条收起通路合并成一个目标值：沉浸收起、灵动岛显示，任一命中即收缩。 */

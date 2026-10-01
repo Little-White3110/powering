@@ -45,6 +45,10 @@ cd HolePowerRing
 5. **跨进程配置走 SharedPreferences。** 设置页写、Hook 侧读（`core/HookPrefs.kt`）。不要引入新的进程间通信方式。
 6. **Gradle DSL**：沿用现有 `build.gradle.kts` 的 AGP 9.x 新写法（`compileSdk { version = release(37) { ... } }`），不要退回旧式 `compileSdk = 37`。Compose 编译器用 JetBrains 插件（AGP 9 已内置 Kotlin 支持，不要再加 `org.jetbrains.kotlin.android`）。
 7. UI 组件优先用 miuix（HyperOS 风格 Compose 库），与现有设置页保持一致，不要混入 Material3 组件风格。
+8. **绝不在 `ClassLoader.loadClass` 的回调里做反射枚举或安装 Hook。** 在类加载临界区内调 `cls.declaredMethods`（强制解析签名 → 触发二次类加载）或 `findAndHookMethod`（触发 ART deoptimize / suspend-all）会**死锁 SystemUI，导致启动期 ANR、手机界面卡死**——2026-10-01 已实际发生并复盘（可行性分析报告 §12.2）。
+   - 需要灵动岛等**插件侧**信息时，**优先找宿主侧的等价信号**（灵动岛显隐就用宿主侧 `MiuiBatteryMeterView.updateIslandShowing`，见 §12.3）；
+   - 宿主侧确实没有、必须走 loadClass 时，回调内只做字符串比较，把重活 `post` 到主线程队列后再执行，绝不内联；
+   - 顺带铁律：**同层带内不要用 `dumpsys window windows` 的 `Window #N` 判断叠加顺序**（同带内它与实际合成顺序相反），要用 `dumpsys SurfaceFlinger --layers` 的 `Output Layer` 数组。
 
 ## 逆向与分析工作方式
 
@@ -70,7 +74,8 @@ python xref.py              # 交叉引用分析
 - **窗口层级已实测（2026-10-01）**：环与灵动岛窗口同为 `type=2009` / `mBaseLayer=191000`，同层带内**后创建的 surface 叠在上**。环在 `Application.onCreate` 加窗口、岛在插件协程里加，必然更晚 ⇒ **岛会盖住环**（A/B 截图已证）。修复：环窗口抬到 `type=2006`（本机层带 231000 > 191000）。
   - **判读铁律：同层带内禁止用 `dumpsys window windows` 的 `Window #N` 判断叠加顺序——同带内它与实际合成顺序相反**；必须用 `dumpsys SurfaceFlinger --layers` 的 `Output Layer` 数组（自底向上打印）。本项目已在这上面栽过一次（早期误判"环在上"）。
   - 详见可行性分析报告 §11 与 `docs/superpowers/plans/2026-10-01-ring-window-layer-priority.md`。**层带表是本机实测值不是 ROM 契约**，换机型必须先用 `dumpsys window windows | grep mBaseLayer` 重测
-- **电池图标取色链路：已确认（2026-10-01）**。`MiuiBatteryMeterIconView.onDarkChangeInternal()` 是系统给电池图标上色的唯一位置，`mLightColor`/`mDarkColor`/`mDarkIntensity` + 四个 `mBattery*Color` 字段可直接反射读取；反色动画时钟在 `LightBarTransitionsController.animateIconTint`。详见可行性分析报告 §12。**未覆盖**镂空样式 `MiuiHollowBatteryMeterIconView`。
+- **电池图标取色链路：已确认（2026-10-01）**。`MiuiBatteryMeterIconView.onDarkChangeInternal()` 是系统给电池图标上色的唯一位置，`mLightColor`/`mDarkColor`/`mDarkIntensity` + 四个 `mBattery*Color` 字段可直接反射读取；反色动画时钟在 `LightBarTransitionsController.animateIconTint`。**未覆盖**镂空样式 `MiuiHollowBatteryMeterIconView`。
+  - ⚠️ **该链路在可行性分析报告中的章节尚未补写**（原引用写作"§12"，但 §12 现已被「灵动岛显隐信号与 ANR 事故」占用，见下条）。补写时请用 **§13**，结论目前只暂存在本条。
 
 ## 不要做的事
 

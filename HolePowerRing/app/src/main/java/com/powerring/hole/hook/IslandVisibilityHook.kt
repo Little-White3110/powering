@@ -1,6 +1,7 @@
 package com.powerring.hole.hook
 
 import android.view.View
+import android.view.ViewParent
 import com.powerring.hole.core.ModuleLog
 import com.powerring.hole.ring.RingState
 import de.robv.android.xposed.XC_MethodHook
@@ -8,105 +9,140 @@ import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedHelpers
 
 /**
- * 灵动岛显隐探针：驱动「有岛时收起圆环」。
+ * 灵动岛显隐探针：驱动「有岛时收起圆环」。**宿主侧实现，不碰插件 ClassLoader。**
  *
- * 为什么不直接用现成的 `IslandProbeHook` 里那套写法：它 Hook 了 `onLayout`，
- * 而 `XposedHelpers.findAndHookMethod` 会沿父类链解析方法——目标类没有声明
- * `onLayout` 时，Hook 实际绑到 `android.view.View.onLayout`，于是在 SystemUI 进程内
- * 对**每一个 View** 生效（这正是「挖孔环形电量LSP模块-可行性分析报告.md」§10.5
- * 记录的踩坑：安全门控形同虚设、误判把环藏掉、并给最高频方法加上 Xposed 回调）。
+ * ## 为什么必须留在宿主侧（2026-10-01 事故记录，别改回去）
  *
- * 逆向结论（`work/dump_class.py` 对插件 dex 的转储）：
- * `miui.systemui.dynamicisland.DynamicIslandBackgroundView` 的 super = `FrameLayout`，
- * **自身声明了** `setVisibility(I)`（以及编译器合成的桥方法 `superSetVisibility(I)`）。
- * 因此本探针只 Hook 它的 `setVisibility`，绝不碰 `onLayout` 等继承方法。
- * 加 Hook 前若换机型，先用 `work/dump_class.py` 复核这两个事实。
+ * 前两版都挂在**插件**（miui.systemui.plugin）的类上，靠 Hook `ClassLoader.loadClass`
+ * 等插件类加载出来再下 Hook。第二版在 loadClass 回调里做了两件重活：
+ * `cls.declaredMethods`（强制解析方法签名，进而触发插件内被混淆的协程类型 `M0/e`
+ * 的类加载）**并当场安装 Hook（触发 ART deoptimize / suspend-all）**。
+ * 结果：**SystemUI 启动期 ANR 死锁**（`ANR in com.android.systemui /
+ * failed to complete startup`，反复重启），手机界面直接卡死。
  *
- * 类加载时机：灵动岛属插件（miui.systemui.plugin）侧，由宿主在运行时用自己的
- * ClassLoader 加载，装 Hook 时类多半还不存在 ⇒ 拦 `ClassLoader.loadClass`，
- * 等类真正被加载出来时再取 Class 下 Hook。
+ * 教训（AGENTS.md 纪律的延伸）：**永远不要在 `ClassLoader.loadClass` 的回调里
+ * 做反射枚举或安装 Hook**。类加载临界区里触发二次类加载 + 让 ART 挂起全部线程，
+ * 是稳定的死锁配方。本项目对灵动岛的信息获取一律走宿主侧类。
  *
- * 降级方向：找不到类 / Hook 失败 / 回调异常，一律记日志后安静放弃，
- * 环保持常显——「多显示一个环」远比「环该藏却没藏」安全。
+ * ## 采用的信号源
+ *
+ * `com.android.systemui.statusbar.views.MiuiBatteryMeterView.updateIslandShowing(ZZZ)V`：
+ *
+ * - **宿主侧类**，与 BatteryHideHook 已稳定 Hook 的 `onDarkChanged` 同一个类，
+ *   用宿主 ClassLoader 直接 `findClassIfExists` 拿到，无需任何 loadClass 拦截；
+ * - `work/method_refs.py` 转储确认该方法**写入 `mIsIslandShowing` 字段**，
+ *   且是 update 型方法（带新状态被调用，**两个方向都会到达**，不会重演
+ *   "只藏不显"）；
+ * - 只 Hook 它自己声明的方法，`updateIslandShowing` 经 dump 确认就声明在该类上。
+ *
+ * 系统自己就是靠这个信息在灵动岛出现时隐藏状态栏电池图标，语义与需求一致。
+ *
+ * ## 为什么按父链过滤到状态栏容器
+ *
+ * `MiuiBatteryMeterView` 在状态栏、控制中心等多处都有实例，各实例的
+ * `mIsIslandShowing` 可能不同步。只认位于 `MiuiStatusBatteryContainer` 内的实例
+ * （与 BatteryHideHook 判定"状态栏电池视图"的同一套办法），避免多实例互相打架导致抖动。
+ *
+ * ## 降级方向
+ *
+ * 找不到类 / 字段读不到 / 方法不存在：一律记日志后安静放弃，**环保持常显** ——
+ * 「多显示一个环」远比「环该藏却没藏」安全。
  */
 object IslandVisibilityHook {
 
-    /** 岛背景 View：自身声明 setVisibility，是唯一的驱动点。 */
-    private const val ISLAND_BG_VIEW = "miui.systemui.dynamicisland.DynamicIslandBackgroundView"
+    private const val METER_VIEW =
+        "com.android.systemui.statusbar.views.MiuiBatteryMeterView"
+
+    private const val CONTAINER_VIEW =
+        "com.android.systemui.statusbar.views.MiuiStatusBatteryContainer"
+
+    /** 该方法内部写入的岛显示状态字段 */
+    private const val FIELD_ISLAND_SHOWING = "mIsIslandShowing"
 
     @Volatile
     private var installed = false
 
     // ---- 以下状态只在 SystemUI 主线程读写 ----
 
-    /** 上次已上报给 RingState 的取值，避免 setVisibility 高频调用时反复驱动 */
+    /** 上次已上报给 RingState 的取值，避免高频回调反复驱动 */
     private var lastDriven: Boolean? = null
 
-    /** 目标类是否已挂过 Hook，防止 loadClass 多次命中时重复挂钩 */
+    /** 实例父链只打印一次，避免刷屏 */
     @Volatile
-    private var viewHooked = false
+    private var chainLogged = false
 
     fun install(classLoader: ClassLoader) {
         if (installed) return
         installed = true
 
+        val meterClass = XposedHelpers.findClassIfExists(METER_VIEW, classLoader)
+        if (meterClass == null) {
+            ModuleLog.e("未找到 $METER_VIEW，灵动岛显隐探针未生效（环保持常显）", null)
+            return
+        }
+
         try {
-            // loadClass(String) 是插件加载类时的必经路径
             XposedHelpers.findAndHookMethod(
-                ClassLoader::class.java,
-                "loadClass",
-                String::class.java,
+                meterClass,
+                "updateIslandShowing",
+                Boolean::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType,
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         try {
-                            val name = param.args[0] as? String ?: return
-                            if (name != ISLAND_BG_VIEW) return
-                            val cls = param.result as? Class<*> ?: return
-                            hookIslandView(cls)
+                            val view = param.thisObject as? View ?: return
+                            if (!isInStatusBatteryContainer(view)) return
+                            val showing = XposedHelpers.getBooleanField(
+                                param.thisObject, FIELD_ISLAND_SHOWING,
+                            )
+                            drive(showing)
                         } catch (t: Throwable) {
-                            ModuleLog.e("灵动岛显隐探针 loadClass 回调异常", t)
+                            ModuleLog.e("灵动岛显隐回调异常", t)
                         }
                     }
                 },
             )
-            ModuleLog.i("灵动岛显隐探针已挂载（等待插件类 $ISLAND_BG_VIEW 加载）")
+            ModuleLog.i("灵动岛显隐 Hook 已挂载 $METER_VIEW.updateIslandShowing（宿主侧信号）")
         } catch (t: Throwable) {
-            ModuleLog.e("灵动岛显隐探针安装失败（环保持常显）", t)
+            ModuleLog.e("Hook updateIslandShowing 失败（环保持常显）", t)
         }
     }
 
-    private fun hookIslandView(cls: Class<*>) {
-        if (viewHooked) return
-        viewHooked = true
-        try {
-            XposedHelpers.findAndHookMethod(
-                cls, "setVisibility",
-                Int::class.javaPrimitiveType,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        try {
-                            val v = param.thisObject as? View ?: return
-                            // VISIBLE 但还没挂到窗口上的那一帧不算「正在显示」：
-                            // 岛展开/收起动画里存在这种中间态
-                            val showing = v.visibility == View.VISIBLE && v.isAttachedToWindow
-                            drive(showing)
-                        } catch (t: Throwable) {
-                            ModuleLog.e("灵动岛显隐探针 setVisibility 回调异常", t)
-                        }
-                    }
-                },
-            )
-            ModuleLog.i("灵动岛显隐探针已挂载 ${cls.name}.setVisibility（驱动信号）")
-        } catch (t: Throwable) {
-            ModuleLog.e("Hook ${cls.name}.setVisibility 失败（环保持常显）", t)
+    /** 只认状态栏电池容器内的实例，控制中心等其他实例不动。 */
+    private fun isInStatusBatteryContainer(start: View): Boolean {
+        var node: ViewParent? = start.parent
+        var depth = 0
+        while (node != null && depth < 30) {
+            if (node.javaClass.name == CONTAINER_VIEW) return true
+            node = node.parent
+            depth++
         }
+        if (!chainLogged) {
+            chainLogged = true
+            ModuleLog.i("灵动岛显隐探针：首个实例不在状态栏容器内，已忽略（链=${parentChain(start)}）")
+        }
+        return false
+    }
+
+    private fun parentChain(start: View): String {
+        val sb = StringBuilder()
+        var node: ViewParent? = start.parent
+        var depth = 0
+        while (node != null && depth < 15) {
+            if (depth > 0) sb.append(" <- ")
+            sb.append(node.javaClass.simpleName)
+            node = node.parent
+            depth++
+        }
+        return sb.toString()
     }
 
     /** 变化过滤 + 驱动 [RingState]，与 ImmersiveProbeHook 的 drive 同构。 */
     private fun drive(showing: Boolean) {
         if (showing == lastDriven) return
         lastDriven = showing
-        ModuleLog.i("灵动岛显隐探针驱动: showing=$showing")
+        ModuleLog.i("灵动岛显隐驱动: showing=$showing")
         RingState.setIslandShowing(showing)
     }
 }

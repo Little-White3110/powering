@@ -10,9 +10,15 @@
 
 **取证环境（2026-10-01 实测）:** 设备 25102RKBEC（myron），系统界面 17.03.260226.r，插件 18.2.2.2.0，1200x2608 @480dpi。adb 为普通 shell 权限（无 root，`killall com.android.systemui` 返回 `Operation not permitted`）。
 
+> **实施状态（2026-10-01）：Task 1–4 全部完成并真机验证。**
+> - Task 1 抬层（`type=2006`/层带 231000）：已验证 —— 环已在灵动岛之上，**锁屏与息屏（AOD）显示正常**，§5 方案 A 的未知项 R3 已排除。
+> - Task 2 验证：已由 `dumpsys SurfaceFlinger --layers` 的 `Output Layer` 数组 + A/B 截图确认。
+> - Task 4 灵动岛收起：已实现并双方向验证（信号源换成宿主侧 `updateIslandShowing`，见 Task 4 正文）。
+> - **过程中发生一次 SystemUI 启动期 ANR 死锁事故**（插件侧 Hook 方案导致，手机界面卡死），根因与纪律见可行性分析报告 §12.2 与 Task 4 的「已否决」小节。
+
 **执行约定（用户既定偏好，沿用 2026-10-01-immersive-ring-collapse.md）：**
-- 全程**不执行 git commit**。
-- 重启 SystemUI 用设置页内置的「重启系统界面」按钮。
+- 全程**不执行 git commit**（注：另有并行会话在本仓库提交过 `7b4f57d` / `76a25c9`，其中 `76a25c9` 含**会冻死 SystemUI 的插件侧 Hook 版本**；本计划的宿主侧修复若未提交，重置工作区会退回事故版本）。
+- 重启 SystemUI 用设置页内置的「重启系统界面」按钮；adb 无 root，必要时用 `adb reboot`。
 - 所有 Hook/回调逻辑必须包 `try/catch (Throwable)` 并走 `ModuleLog`。
 
 ---
@@ -376,176 +382,39 @@ adb shell screencap -p /sdcard/after.png && adb pull /sdcard/after.png
 - **窗口层级已实测（2026-10-01）**：环与灵动岛窗口同为 `type=2009` / `mBaseLayer=191000`，同层带内**后创建的 surface 叠在上**，岛 surface 必然更晚创建 ⇒ **岛会盖住环**。修复：环窗口抬到 `type=2006`（层带 231000）。**判读铁律：同层带内不要用 `dumpsys window windows` 的 `Window #N` 判断叠加顺序（同带内它与实际相反），要用 `dumpsys SurfaceFlinger --layers` 的 `Output Layer` 数组。** 详见可行性分析报告 §11
 ```
 
-### Task 4（备选）: 保带抢先——岛 addView 后重建环窗口
+### Task 4: 灵动岛显示时收起圆环（已实现并真机验证）
 
-> **仅在 Task 2 Step 4 发现 `type=2006` 在锁屏/AOD 下有异常时执行。** 若 Task 2 全绿，本 Task 作废。
+**状态：完成（2026-10-01）。** 实现为 `hook/IslandVisibilityHook.kt` + 配置项 `collapseOnIsland`
+（设置页「有岛时隐藏圆环」，默认关），与沉浸收起共用 `RingState` 的同一条 `collapseProgress` 动画通道。
 
-**Files:**
-- Modify: `HolePowerRing/app/src/main/java/com/powerring/hole/ring/RingWindowController.kt`
-- Create: `HolePowerRing/app/src/main/java/com/powerring/hole/hook/IslandWindowOrderHook.kt`
-- Modify: `HolePowerRing/app/src/main/java/com/powerring/hole/hook/SystemUiHooks.kt`
+**采用的信号源：宿主侧 `MiuiBatteryMeterView.updateIslandShowing(ZZZ)V`** —— `afterHookedMethod`
+内读 `mIsIslandShowing` 字段后驱动 `RingState.setIslandShowing(showing)`。用宿主 ClassLoader 直接取类，
+**不涉及任何类加载劫持**；只认位于 `MiuiStatusBatteryContainer` 内的实例，避免状态栏/控制中心多实例打架。
 
-- [ ] **Step 1: 先做一次实验，确认同带内"后创建者在上"**
-
-在改代码前，用一次真机实验把规则钉死（本方案的正确性完全依赖它）：
-
-1. 按 Task 1 的 Step 1–2 把 `TYPE_RING_WINDOW` 暂时改回 `2009`；
-2. 编译安装、重启 SystemUI；
-3. 触发岛显示内容，执行：
-
-```bash
-adb shell dumpsys SurfaceFlinger --layers | grep "Output Layer"
-```
-
-记录此时环与岛的相对位置（预期：岛在上，即当前故障态）；
-4. 在模块里临时加一段"启动 3 秒后 `removeView` + `addView` 环窗口"的调试代码，重启后重复 Step 3。
-
-期望：**重建后环出现在岛的上方**。若成立，规则确认，继续 Step 2；若不成立（环仍被盖），说明 SF 在同 z 时按 WMS 索引而非创建顺序叠加，本 Task 作废并需另寻方案。
-
-- [ ] **Step 2: 新建岛窗口创建时机探针**
-
-创建 `HolePowerRing/app/src/main/java/com/powerring/hole/hook/IslandWindowOrderHook.kt`：
-
-```kotlin
-package com.powerring.hole.hook
-
-import com.powerring.hole.core.ModuleLog
-import com.powerring.hole.ring.RingWindowController
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XC_MethodHook.MethodHookParam
-import de.robv.android.xposed.XposedHelpers
-
-/**
- * 灵动岛窗口创建时机探针（保带抢先方案的触发器）。
- *
- * 插件由独立 ClassLoader 加载，必须用插件类的 classLoader 解析类名。
- * 岛窗口的真正创建点是 DynamicIslandWindowController$attach$1.invokeSuspend
- * 里的 WindowManager.addView；该协程只在 start() 时跑一次，是冷路径，
- * 不会给 SystemUI 带来额外开销。
- */
-object IslandWindowOrderHook {
-
-    /** 插件包前缀，只对灵动岛窗口的类做处理 */
-    private const val ISLAND_ATTACH_CLASS =
-        "miui.systemui.dynamicisland.window.DynamicIslandWindowController\$attach\$1"
-
-    @Volatile
-    private var installed = false
-
-    fun install(hostClassLoader: ClassLoader) {
-        if (installed) return
-        installed = true
-        try {
-            // 插件类由宿主 ClassLoader 在运行时加载，先挂钩 loadClass 拿到插件 loader
-            XposedHelpers.findAndHookMethod(
-                ClassLoader::class.java,
-                "loadClass",
-                String::class.java,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val name = param.args[0] as? String ?: return
-                        if (name != ISLAND_ATTACH_CLASS) return
-                        val cls = param.result as? Class<*> ?: return
-                        hookAttach(cls)
-                    }
-                },
-            )
-            ModuleLog.i("灵动岛窗口探针已挂载（等待插件类加载）")
-        } catch (t: Throwable) {
-            ModuleLog.e("灵动岛窗口探针安装异常", t)
-        }
-    }
-
-    private var hooked = false
-
-    private fun hookAttach(cls: Class<*>) {
-        if (hooked) return
-        hooked = true
-        try {
-            XposedHelpers.findAndHookMethod(
-                cls,
-                "invokeSuspend",
-                Any::class.java,
-                object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        try {
-                            // 岛窗口此刻已 addView，其 surface 已创建。
-                            // 同层带内后创建的 surface 叠在上，重新添加环窗口即可翻盘。
-                            RingWindowController.recreateAboveIsland()
-                        } catch (t: Throwable) {
-                            ModuleLog.e("重建环窗口以抢占层级失败", t)
-                        }
-                    }
-                },
-            )
-            ModuleLog.i("已捕获 ${cls.name}，等待 invokeSuspend")
-        } catch (t: Throwable) {
-            ModuleLog.e("Hook ${cls.name}.invokeSuspend 失败", t)
-        }
-    }
-}
-```
-
-- [ ] **Step 3: RingWindowController 增加重建方法**
-
-在该文件的 `attach` 函数之后新增：
-
-```kotlin
-    /**
-     * 在灵动岛窗口创建之后重建本窗口，抢"同层带内后创建者在上"的位置。
-     *
-     * 仅在窗口尚未添加成功时是空操作；重建复用同一个 View 实例，
-     * 窗口高度会随 insets 监听重新校准，不影响绘制状态。
-     */
-    fun recreateAboveIsland() {
-        val wm = windowManager ?: return
-        val view = ringView ?: return
-        if (!attached) return
-        try {
-            wm.removeView(view)
-        } catch (t: Throwable) {
-            ModuleLog.e("重建前移除环窗口失败，放弃本次重建", t)
-            return
-        }
-        try {
-            wm.addView(view, params)
-            ModuleLog.i("环窗口已在灵动岛窗口之后重建（type=$TYPE_RING_WINDOW）")
-        } catch (t: Throwable) {
-            ModuleLog.e("重建环窗口失败，环将不可见", t)
-        }
-    }
-```
-
-同时把当前的 `params` 提升为对象级字段（原为 `attach` 内的局部变量），使其可被重建方法复用：
-
-- 在字段区（`private var ringView: PowerRingView? = null` 之后）新增 `private var params: WindowManager.LayoutParams? = null`
-- 在 `attach` 中把 `val params = WindowManager.LayoutParams().apply {` 改为 `params = WindowManager.LayoutParams().apply {`
-- 重建方法中改用局部快照：`val p = params ?: return`，并把 `wm.addView(view, params)` 改为 `wm.addView(view, p)`
-
-> 注意：`setOnApplyWindowInsetsListener` 里对 `lp.height` 的更新走的是 `v.layoutParams`，remove/add 之后由系统重新下发 insets，会再次校正高度，逻辑无需改动。
-
-- [ ] **Step 4: 注册探针**
-
-在 `SystemUiHooks.install()` 中 `ImmersiveProbeHook.install(classLoader)` 之后插入：
-
-```kotlin
-        // 灵动岛窗口创建时机探针（保带抢先方案）
-        try {
-            IslandWindowOrderHook.install(classLoader)
-        } catch (t: Throwable) {
-            ModuleLog.e("灵动岛窗口探针安装异常", t)
-        }
-```
-
-- [ ] **Step 5: 编译、安装、重启、复验**
-
-重复 Task 1 Step 5–7 与 Task 2 Step 1–3，额外确认日志中出现：
+真机实测（媒体岛，播放 → 停止），**两个方向都到达**：
 
 ```
-环窗口已在灵动岛窗口之后重建（type=2009）
+灵动岛显隐驱动: showing=true   → 灵动岛显示状态: showing=true  沉浸=false 收起目标=1.0   （环收起）
+灵动岛显隐驱动: showing=false  → 灵动岛显示状态: showing=false 沉浸=false 收起目标=0.0   （环恢复）
 ```
 
-且 `Output Layer` 数组中环位于岛之后。
+> ## ⛔ 已否决：任何"在 `ClassLoader.loadClass` 回调里装 Hook"的做法
+>
+> 本计划初稿的 Task 4（"保带抢先"：Hook 插件 `DynamicIslandWindowController$attach$1` 后在岛之后
+> 重建环窗口）**已被否决，不要再实现**。同思路的写法——在 `loadClass` 回调里做
+> `cls.declaredMethods`（强制解析签名 → 触发插件内混淆协程类型的二次类加载）**并当场安装 Hook**
+> （触发 ART deoptimize / suspend-all）——在真机上**直接死锁 SystemUI**：
+>
+> ```
+> ANR in com.android.systemui
+> Reason: Process ... failed to complete startup     （反复重启仍 ANR，手机界面卡死）
+> ```
+>
+> 恢复方式只能是重装安全版 APK + `adb reboot`（adb 无 root 不能单独重启 SystemUI）。
+> 完整复盘见可行性分析报告 §12.2。
+>
+> **由此确立的选型原则：灵动岛等插件侧信息，一律优先取宿主侧等价信号；实在没有时，
+> 回调内只做字符串比较，把重活 `post` 到主线程后再执行。**
 
 ---
 
