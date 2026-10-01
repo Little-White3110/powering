@@ -13,9 +13,14 @@ import de.robv.android.xposed.XposedHelpers
 /**
  * SystemUI 进程内的 Hook 总装。
  *
- * 当前载体方案：独立 WindowManager 窗口（与灵动岛 DynamicIslandWindow
- * 同 type=2009，层级可压住岛）。状态栏视图注入与挖孔覆盖层 onDraw
+ * 当前载体方案：独立 WindowManager 窗口（type=2006，层带 231000，实测严格高于
+ * 灵动岛 DynamicIslandWindow 的 2009/191000，层级胜负不再依赖添加顺序）。
+ * 状态栏视图注入与挖孔覆盖层 onDraw
  * 两套实验载体保留在代码库中但不启用，避免多载体重影。
+ *
+ * 收起通路有两个信号源，都收敛到 RingState 的同一条 collapseProgress 通道：
+ * [ImmersiveProbeHook]（状态栏窗口 shown/hidden）与 [IslandVisibilityHook]
+ * （灵动岛背景 View 的 setVisibility）。
  */
 object SystemUiHooks {
 
@@ -56,6 +61,13 @@ object SystemUiHooks {
             ImmersiveProbeHook.install(classLoader)
         } catch (t: Throwable) {
             ModuleLog.e("沉浸探针安装异常", t)
+        }
+
+        // 灵动岛显隐探针（驱动"有岛时收起圆环"）
+        try {
+            IslandVisibilityHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("灵动岛显隐探针安装异常", t)
         }
 
         // Application.onCreate 后拿到 Context：注册电量监听 + 添加环窗口

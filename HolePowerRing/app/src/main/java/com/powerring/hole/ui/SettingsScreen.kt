@@ -243,6 +243,17 @@ private fun SwitchTabContent(
                         summary = "观看视频/图片等状态栏自动收起的场景，圆环向内收缩并淡出；状态栏恢复时弹回",
                         enabled = config.ringEnabled,
                     )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SwitchPreference(
+                        checked = config.collapseOnIsland,
+                        onCheckedChange = { enabled ->
+                            PrefsStore.setBoolean(ctx, RingConfig.KEY_COLLAPSE_ON_ISLAND, enabled)
+                            update(config.copy(collapseOnIsland = enabled))
+                        },
+                        title = "有岛时隐藏圆环",
+                        summary = "灵动岛（超级岛）显示时，圆环像全屏沉浸时一样向内收缩并淡出",
+                        enabled = config.ringEnabled,
+                    )
                 }
             }
             item(key = "systemTitle") {

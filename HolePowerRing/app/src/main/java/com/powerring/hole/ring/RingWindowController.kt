@@ -19,15 +19,27 @@ import com.powerring.hole.core.ModuleLog
  * frame 0,0-1200,156，cutoutMode=always），不在 StatusBar 窗口视图树内，
  * 因此向 PhoneStatusBarView 注入 View 永远会被它压住。
  *
- * 本窗口采用与岛相同的 type=2009 / gravity=TOP / cutoutMode=always，
- * 在岛窗口之后创建，同 baseLayer 下后创建者层级更高；
+ * 本窗口采用 type=2006（TYPE_SYSTEM_ALERT，本机层带 231000）/ gravity=TOP /
+ * cutoutMode=always —— 层带严格高于灵动岛的 191000，层级胜负不依赖添加顺序；
  * 高度跟随 cutout 安全区；FLAG_NOT_TOUCHABLE 使整个窗口不参与触摸，
  * 对状态栏操作零影响。
  */
 object RingWindowController {
 
-    /** 与 DynamicIslandWindow 相同的窗口类型（TYPE_KEYGUARD_DIALOG 槽位，MIUI 复用） */
-    private const val TYPE_ISLAND_COMPAT = 2009
+    /**
+     * 环窗口的 type。
+     *
+     * 为什么不是与灵动岛相同的 2009（TYPE_KEYGUARD_DIALOG 槽位，本机层带 191000）：
+     * 同层带内两个 surface 的 z 相同，**后创建者叠在上**。环窗口在
+     * Application.onCreate 添加，岛窗口在插件协程里添加，必然更晚 —— 于是岛的
+     * 黑色胶囊永远压在环之上，环被完全盖住（2026-10-01 真机 A/B 实测，
+     * 见 docs/superpowers/plans/2026-10-01-ring-window-layer-priority.md §2/§3.3）。
+     *
+     * 2006（TYPE_SYSTEM_ALERT）在本机策略表里映射为层带 231000，严格大于
+     * 191000，层级胜负不再依赖添加顺序。岛运行期间从不改自己的 type
+     * （work/method_refs.py 全插件扫描确认），所以抬层后不会被打回。
+     */
+    private const val TYPE_RING_WINDOW = 2006
 
     /**
      * 窗口高度在 cutout 安全区之外的余量（dp）。
@@ -81,7 +93,7 @@ object RingWindowController {
         ringView = view
 
         val params = WindowManager.LayoutParams().apply {
-            type = TYPE_ISLAND_COMPAT
+            type = TYPE_RING_WINDOW
             format = PixelFormat.TRANSLUCENT
             width = WindowManager.LayoutParams.MATCH_PARENT
             // 初始给与灵动岛相同的高度（156px），insets 到达后按安全区精确修正；
@@ -109,7 +121,9 @@ object RingWindowController {
             wm.addView(view, params)
             attached = true
             ringView = view
-            ModuleLog.i("环形电量独立窗口已添加（type=2009）")
+            ModuleLog.i(
+                "环形电量独立窗口已添加（type=$TYPE_RING_WINDOW，层带 231000 > 灵动岛的 191000）",
+            )
         } catch (t: Throwable) {
             ModuleLog.e("添加环窗口失败（首次），5 秒后重试一次", t)
             if (!retried) {

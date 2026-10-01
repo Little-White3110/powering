@@ -17,6 +17,8 @@ data class RingConfig(
     val chargingGlow: Boolean = true,
     /** 状态栏被系统自动收起（沉浸模式）时，环向内收缩并隐藏 */
     val collapseOnImmersive: Boolean = true,
+    /** 灵动岛（超级岛）显示时，圆环像全屏沉浸时一样向内收缩并淡出 */
+    val collapseOnIsland: Boolean = false,
     /** 环描边宽度（dp） */
     val strokeWidthDp: Float = 2.5f,
     /** 水平偏移（dp），正值向右 */
@@ -38,6 +40,7 @@ data class RingConfig(
         const val KEY_LEVEL_ANIM = "level_anim"
         const val KEY_CHARGING_GLOW = "charging_glow"
         const val KEY_COLLAPSE_ON_IMMERSIVE = "collapse_on_immersive"
+        const val KEY_COLLAPSE_ON_ISLAND = "collapse_on_island"
         const val KEY_STROKE_WIDTH = "stroke_width_dp"
         const val KEY_OFFSET_X = "offset_x_dp"
         const val KEY_OFFSET_Y = "offset_y_dp"

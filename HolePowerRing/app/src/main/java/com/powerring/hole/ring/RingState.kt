@@ -39,7 +39,7 @@ object RingState {
     @Volatile var screenOn: Boolean = true
         private set
 
-    // ---- 沉浸收起 ----
+    // ---- 收起通路（沉浸收起 / 灵动岛显示，共用一条动画通道） ----
 
     /** 收起进度：0f 完整显示，1f 完全收缩不可见（渲染端按此收缩半径并衰减透明度） */
     @Volatile
@@ -49,6 +49,10 @@ object RingState {
     /** 最近一次系统上报的状态栏收起状态（沉浸模式） */
     @Volatile
     private var statusBarCollapsed: Boolean = false
+
+    /** 最近一次上报的灵动岛显示状态（由 IslandVisibilityHook 驱动） */
+    @Volatile
+    private var islandShowing: Boolean = false
 
     private var collapseAnimator: ValueAnimator? = null
 
@@ -117,7 +121,8 @@ object RingState {
 
     private fun RingConfig.signature() =
         "$ringEnabled|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
-            "$useCustomColor|$customColor|$chargingGlow|$levelAnim|$collapseOnImmersive"
+            "$useCustomColor|$customColor|$chargingGlow|$levelAnim|" +
+            "$collapseOnImmersive|$collapseOnIsland"
 
     // ---- 生命周期 ----
 
@@ -249,7 +254,8 @@ object RingState {
 
     /**
      * 状态栏是否被系统自动收起（沉浸模式）。
-     * 由环窗口 insets 监听（或兜底探针）调用，二者均在 SystemUI 主线程。
+     * 由 ImmersiveProbeHook 的系统窗口状态回调驱动（环窗口自身不派发
+     * statusBars insets，见 ImmersiveProbeHook 文件头），在 SystemUI 主线程调用。
      */
     fun setStatusBarCollapsed(collapsed: Boolean) {
         if (statusBarCollapsed == collapsed) return
@@ -258,14 +264,34 @@ object RingState {
         animateCollapseTo(collapseTarget())
     }
 
-    private fun collapseTarget(): Float =
-        if (statusBarCollapsed && config.collapseOnImmersive) 1f else 0f
+    /**
+     * 灵动岛（超级岛）是否正在显示。
+     *
+     * 与沉浸收起共用同一条 collapseProgress 动画通道：任一条件成立即收缩到 1f，
+     * 两者都不成立才弹回。两个开关互不影响，各自控制自己的场景。
+     */
+    fun setIslandShowing(showing: Boolean) {
+        if (islandShowing == showing) return
+        islandShowing = showing
+        ModuleLog.i("灵动岛显示状态: showing=$showing")
+        animateCollapseTo(collapseTarget())
+    }
+
+    /** 两条收起通路合并成一个目标值：沉浸收起、灵动岛显示，任一命中即收缩。 */
+    private fun collapseTarget(): Float {
+        val c = config
+        val byImmersive = statusBarCollapsed && c.collapseOnImmersive
+        val byIsland = islandShowing && c.collapseOnIsland
+        return if (byImmersive || byIsland) 1f else 0f
+    }
 
     /** 照抄 startLevelAnimation 的「取消旧动画→立即到位或平滑过渡」模式。 */
     private fun animateCollapseTo(target: Float) {
         val start = collapseProgress
         collapseAnimator?.let { if (it.isRunning) it.cancel() }
-        if (!config.collapseOnImmersive || kotlin.math.abs(target - start) < 0.01f) {
+        // 两个收起开关都关掉时压根不需要播动画，直接到位
+        val noCollapseFeature = !config.collapseOnImmersive && !config.collapseOnIsland
+        if (noCollapseFeature || kotlin.math.abs(target - start) < 0.01f) {
             collapseProgress = target
             invalidateAll()
             return
