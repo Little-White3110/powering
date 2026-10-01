@@ -33,6 +33,8 @@ data class BatteryPalette(
     val lowNow: Boolean = false,
     /** 状态栏反色强度 0..1，仅用于日志与诊断 */
     val darkIntensity: Float = 1f,
+    /** true = darkIntensity 来自逐帧动画时钟，false = 离散跳变 */
+    val intensityFromClock: Boolean = false,
 ) {
     companion object {
         val EMPTY = BatteryPalette()
@@ -67,4 +69,9 @@ data class SystemBatteryColors(
     val powerSaveNow: Boolean = false,
     val lowNow: Boolean = false,
     val darkIntensity: Float = 1f,
+    /**
+     * 本次 darkIntensity 来自系统的动画时钟（applyDarkIntensity 逐帧回调），
+     * 而不是电池图标 View 自己的重绘时机。false 表示是离散的跳变。
+     */
+    val fromClock: Boolean = false,
 )

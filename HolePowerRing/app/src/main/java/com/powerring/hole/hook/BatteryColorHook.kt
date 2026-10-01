@@ -36,8 +36,9 @@ object BatteryColorHook {
     private const val LIGHT_BAR =
         "com.android.systemui.statusbar.phone.LightBarTransitionsController"
 
-    /** 读不到系统常量时的兜底反色过渡时长 */
-    private const val DEFAULT_TINT_DURATION_MS = 250L
+    /** 状态栏反色动画的真实时钟：ValueAnimator 每帧回调它 */
+    private const val DARK_DISPATCHER =
+        "com.android.systemui.statusbar.phone.DarkIconDispatcherImpl"
 
     /**
      * 兜底轮询间隔。系统回调正常时每次 publish 都会被数据类相等性挡掉、
@@ -63,6 +64,29 @@ object BatteryColorHook {
 
     private var firstDumpLogged = false
 
+    /** 诊断：是否打印逐帧轨迹。默认开，验证完在 Task 5 关掉。 */
+    @Volatile
+    private var traceEnabled = true
+
+    /** 诊断：上一次打点的墙钟时间，用来限流 */
+    private var lastTraceMs = 0L
+
+    /** 诊断：动画开始时的强度与时间，用于算实测时长 */
+    private var traceStartMs = 0L
+    private var traceStartValue = Float.NaN
+
+    /** 诊断：捕获到的系统时长；没捕获到为 0 */
+    @Volatile
+    private var capturedDurationMs = 0
+
+    /** 诊断：最近一次 animateIconTint 的实参，作为 getTintAnimationDuration 的兜底来源 */
+    @Volatile
+    private var capturedTarget = Float.NaN
+    @Volatile
+    private var capturedStartDelay = -1L
+    @Volatile
+    private var capturedDuration = -1L
+
     /** 「颜色尚未就绪」只报一次，避免兜底轮询刷屏 */
     @Volatile
     private var notReadyLogged = false
@@ -78,7 +102,8 @@ object BatteryColorHook {
         if (installed) return
         installed = true
 
-        readTintDuration(classLoader)
+        hookDarkDispatcher(classLoader)
+        hookTintAnimator(classLoader)
 
         val iconCls = findClass(ICON_VIEW, classLoader)
         if (iconCls == null) {
@@ -99,19 +124,108 @@ object BatteryColorHook {
         runCatching { XposedHelpers.findClassIfExists(name, classLoader) }.getOrNull()
 
     /**
-     * 读取系统自己的反色过渡时长，让环的 Argb 过渡与状态栏图标同长。
-     * 读不到就用 250ms 兜底，不影响功能。
+     * 挂状态栏反色动画的权威时钟与真实时长。
+     *
+     * `applyDarkIntensity(F)` 由 LightBarTransitionsController 的 ValueAnimator
+     * 每帧回调，是系统自己的插值时钟；`getTintAnimationDuration()` 返回的是
+     * 按 ComputilityUtils 设备档位算出的真实时长（不是任何编译期常量）。
+     *
+     * 两者都是类自身声明的方法，不会退化到父类。
      */
-    private fun readTintDuration(classLoader: ClassLoader) {
-        val value = runCatching {
-            val cls = findClass(LIGHT_BAR, classLoader) ?: return@runCatching null
-            val field = cls.getDeclaredField("DEFAULT_TINT_ANIMATION_DURATION")
-            field.isAccessible = true
-            field.getInt(null)
-        }.getOrNull()
-        val ms = value?.toLong()?.takeIf { it > 0 } ?: DEFAULT_TINT_DURATION_MS
-        RingState.setTintAnimationDuration(ms)
-        ModuleLog.i("电池图标颜色 Hook：反色过渡时长 = ${ms}ms")
+    private fun hookDarkDispatcher(classLoader: ClassLoader) {
+        val cls = findClass(DARK_DISPATCHER, classLoader)
+        if (cls == null) {
+            ModuleLog.e(
+                "未找到 $DARK_DISPATCHER，环色过渡将退回默认时长", null,
+            )
+            return
+        }
+        try {
+            XposedHelpers.findAndHookMethod(cls, "applyDarkIntensity",
+                Float::class.javaPrimitiveType, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        guard("applyDarkIntensity") {
+                            val v = param.args.getOrNull(0) as? Float
+                            if (v != null) {
+                                onClockTick(v)
+                                publish(fromClock = true)
+                            }
+                        }
+                    }
+                })
+            ModuleLog.i("电池图标颜色 Hook 已挂载 ${cls.name}.applyDarkIntensity（动画时钟）")
+        } catch (t: Throwable) {
+            ModuleLog.e("Hook applyDarkIntensity 失败", t)
+        }
+        try {
+            XposedHelpers.findAndHookMethod(cls, "getTintAnimationDuration",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        guard("getTintAnimationDuration") {
+                            val ms = param.result as? Int
+                            if (ms != null && ms > 0 && ms != capturedDurationMs) {
+                                capturedDurationMs = ms
+                                RingState.setTintAnimationDuration(ms.toLong())
+                                ModuleLog.i(
+                                    "电池图标颜色 Hook：捕获系统反色动画时长 = ${ms}ms",
+                                )
+                            }
+                        }
+                    }
+                })
+            ModuleLog.i("电池图标颜色 Hook 已挂载 ${cls.name}.getTintAnimationDuration")
+        } catch (t: Throwable) {
+            ModuleLog.e("Hook getTintAnimationDuration 失败", t)
+        }
+    }
+
+    /**
+     * 时长的第二来源：`animateIconTint(F, J, J, Z)` 的实参就是系统这次动画
+     * 真正用的 (目标强度, startDelay, duration)。
+     *
+     * 签名来自 work/method_refs.py 的实证——该方法体内同时出现
+     * ValueAnimator.setStartDelay 与 setDuration，参数顺序按 AOSP 同名方法
+     * `animateIconTint(float, long startDelay, long duration)` 对齐。
+     *
+     * 作用：当 getTintAnimationDuration() 没被调用过时（例如该次过渡走了
+     * 非动画路径），这里仍能拿到 duration 作为兜底。
+     */
+    private fun hookTintAnimator(classLoader: ClassLoader) {
+        val cls = findClass(LIGHT_BAR, classLoader) ?: return
+        try {
+            XposedHelpers.findAndHookMethod(
+                cls, "animateIconTint",
+                Float::class.javaPrimitiveType,
+                java.lang.Long.TYPE,
+                java.lang.Long.TYPE,
+                Boolean::class.javaPrimitiveType,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        guard("animateIconTint") {
+                            val target = param.args.getOrNull(0) as? Float
+                            val delay = param.args.getOrNull(1) as? Long
+                            val duration = param.args.getOrNull(2) as? Long
+                            if (target != null && delay != null && duration != null) {
+                                capturedTarget = target
+                                capturedStartDelay = delay
+                                capturedDuration = duration
+                                if (duration > 0 && capturedDurationMs != duration.toInt()) {
+                                    capturedDurationMs = duration.toInt()
+                                    RingState.setTintAnimationDuration(duration)
+                                    ModuleLog.i(
+                                        "电池图标颜色 Hook：animateIconTint 实参 " +
+                                            "target=$target delay=${delay}ms duration=${duration}ms",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+            ModuleLog.i("电池图标颜色 Hook 已挂载 ${cls.name}.animateIconTint（时长兜底）")
+        } catch (t: Throwable) {
+            ModuleLog.e("Hook animateIconTint 失败", t)
+        }
     }
 
     /** 图标 View：系统真正算出颜色的位置。 */
@@ -214,9 +328,10 @@ object BatteryColorHook {
         return icon
     }
 
-    private fun publish() {
+    private fun publish(fromClock: Boolean = false) {
         val icon = resolveIcon() ?: return
         val colors = read(icon) ?: return
+        val snapshot = if (fromClock) colors.copy(fromClock = true) else colors
 
         if (!firstDumpLogged) {
             firstDumpLogged = true
@@ -235,7 +350,30 @@ object BatteryColorHook {
             ModuleLog.i("电池图标状态变化: $flagKey")
         }
 
-        RingState.setSystemBatteryColors(colors)
+        RingState.setSystemBatteryColors(snapshot)
+    }
+
+    /**
+     * 系统动画时钟每帧回调。
+     *
+     * 这里**只做诊断**（限流打印）。真正的取色仍由 publish() 走
+     * onDarkChangeInternal —— 两者的频率差正是 Task 3 要量的东西。
+     */
+    private fun onClockTick(darkIntensity: Float) {
+        if (!traceEnabled) return
+        val now = android.os.SystemClock.uptimeMillis()
+        if (traceStartMs == 0L || now - traceStartMs > 2000L) {
+            traceStartMs = now
+            traceStartValue = darkIntensity
+            lastTraceMs = 0L
+        }
+        // 限流：每 60ms 打一行，够看清斜坡形状又不刷屏
+        if (now - lastTraceMs < 60L) return
+        lastTraceMs = now
+        ModuleLog.i(
+            "时钟轨迹: dt=${now - traceStartMs}ms value=$darkIntensity " +
+                "(起点=$traceStartValue, 时长=${if (capturedDurationMs > 0) capturedDurationMs else "未捕获"})",
+        )
     }
 
     /**

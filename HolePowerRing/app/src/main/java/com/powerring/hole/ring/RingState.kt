@@ -77,8 +77,12 @@ object RingState {
     private val levelInterpolator = DecelerateInterpolator(1.5f)
     private val COLLAPSE_DURATION_MS = 260L
 
-    /** 读不到系统常量时的兜底反色过渡时长 */
-    private const val DEFAULT_TINT_DURATION_MS = 250L
+    /**
+     * 连 `DarkIconDispatcherImpl.getTintAnimationDuration()` 都拿不到时的最后兜底。
+     * 250ms 是 MIUI 状态栏图标反色的常见观感值，仅在系统完全不可读时使用；
+     * 正常路径下 [tintAnimationDurationMs] 会被系统真实时长覆盖。
+     */
+    private const val FALLBACK_TINT_DURATION_MS = 250L
 
     // ---- 系统电池图标调色板（跟随原生图标颜色） ----
 
@@ -101,7 +105,7 @@ object RingState {
 
     /** 反色过渡时长，优先取系统 LightBarTransitionsController 的常量，保证节奏一致。 */
     @Volatile
-    var tintAnimationDurationMs: Long = DEFAULT_TINT_DURATION_MS
+    var tintAnimationDurationMs: Long = FALLBACK_TINT_DURATION_MS
         private set
 
     private var colorAnimator: ValueAnimator? = null
@@ -168,9 +172,18 @@ object RingState {
         }
     }
 
-    /** 由 BatteryColorHook 在读到系统常量后调用；非法值忽略。 */
+    /**
+     * 由 BatteryColorHook 在捕获到系统真实时长后调用；非法值忽略。
+     *
+     * 来源是 `DarkIconDispatcherImpl.getTintAnimationDuration()`，
+     * 按 `ComputilityUtils` 设备档位计算，不是编译期常量。
+     */
     fun setTintAnimationDuration(ms: Long) {
-        if (ms > 0) tintAnimationDurationMs = ms
+        if (ms <= 0) return
+        if (ms != tintAnimationDurationMs) {
+            tintAnimationDurationMs = ms
+            ModuleLog.i("环色过渡时长更新为 ${ms}ms（取自系统）")
+        }
     }
 
     /**
@@ -189,6 +202,9 @@ object RingState {
         lastSystemColors = colors
 
         val intensity = colors.darkIntensity.coerceIn(0f, 1f)
+        // 时钟路径每帧来，此时 intensity 本身就是连续的插值结果；
+        // 渲染路径是离散跳变，需要自己补一次等长过渡。
+        val continuous = colors.fromClock
         val intensityMoved = lastDarkIntensity.isNaN() || intensity != lastDarkIntensity
         lastDarkIntensity = intensity
 
@@ -210,7 +226,8 @@ object RingState {
             darkIntensity = intensity,
         )
 
-        if (intensityMoved) {
+        if (continuous || intensityMoved) {
+            // 连续路径：目标色每帧都在变，直接跟随系统时钟，不叠加二次动画
             colorAnimator?.cancel()
             colorAnimator = null
             normalColor = target
@@ -223,7 +240,8 @@ object RingState {
         if (now - lastColorLogMs >= 1000L) {
             lastColorLogMs = now
             ModuleLog.i(
-                "环色跟随系统电池图标: di=$intensity normal=#${hex(target)} " +
+                "环色跟随系统电池图标: di=$intensity src=${if (continuous) "clock" else "view"} " +
+                    "normal=#${hex(target)} " +
                     "low=#${hex(colors.low)} save=#${hex(colors.powerSave)} " +
                     "perf=#${hex(colors.performance)} charge=#${hex(colors.charging)} " +
                     "flags(charge=${colors.chargingNow},perf=${colors.performanceNow}," +
