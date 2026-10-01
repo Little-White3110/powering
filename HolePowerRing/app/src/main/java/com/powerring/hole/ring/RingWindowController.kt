@@ -29,8 +29,12 @@ object RingWindowController {
     /** 与 DynamicIslandWindow 相同的窗口类型（TYPE_KEYGUARD_DIALOG 槽位，MIUI 复用） */
     private const val TYPE_ISLAND_COMPAT = 2009
 
-    /** 窗口高度在 cutout 安全区之外的余量（px） */
-    private const val EXTRA_BOTTOM_PX = 12
+    /**
+     * 窗口高度在 cutout 安全区之外的余量（dp）。
+     * 需覆盖最大向下偏移（OFFSET_MAX=20dp）+ 环半径外沿，否则垂直偏移下半环被窗口裁切。
+     * 向上偏移受屏幕顶物理限制，扩窗无法解决，由设置页文案说明。
+     */
+    private const val EXTRA_BOTTOM_DP = 26f
 
     private var windowManager: WindowManager? = null
     private var appContext: Context? = null
@@ -50,7 +54,8 @@ object RingWindowController {
             // 收到 insets 后按挖孔安全区高度调整窗口高度
             setOnApplyWindowInsetsListener { v, insets ->
                 val cutoutTop = insets.displayCutout?.safeInsetTop ?: 0
-                val targetHeight = (cutoutTop + EXTRA_BOTTOM_PX).coerceAtLeast(1)
+                val extraPx = (EXTRA_BOTTOM_DP * v.resources.displayMetrics.density).toInt()
+                val targetHeight = (cutoutTop + extraPx).coerceAtLeast(1)
                 val lp = v.layoutParams as? WindowManager.LayoutParams
                 if (lp != null && lp.height != targetHeight) {
                     lp.height = targetHeight

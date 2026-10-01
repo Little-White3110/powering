@@ -1,6 +1,7 @@
 package com.powerring.hole.hook
 
 import android.app.Application
+import com.powerring.hole.core.HookPrefs
 import com.powerring.hole.core.ModuleLog
 import com.powerring.hole.data.BatteryObserver
 import com.powerring.hole.ring.RingState
@@ -53,6 +54,7 @@ object SystemUiHooks {
                         val app = param.thisObject as Application
                         RingState.attachContext(app)
                         BatteryObserver.start(app)
+                        HookPrefs.refresh()
                         RingWindowController.attach(app)
                         ModuleLog.i("SystemUI Application 初始化完成")
                     } catch (t: Throwable) {

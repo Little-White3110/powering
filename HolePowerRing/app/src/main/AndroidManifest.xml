@@ -30,6 +30,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 模块配置跨进程只读出口：SystemUI 侧经 ContentResolver.query 获取 -->
+        <provider
+            android:name=".ui.ConfigProvider"
+            android:authorities="com.powerring.hole.config"
+            android:exported="true"
+            android:grantUriPermissions="false" />
     </application>
 
 </manifest>

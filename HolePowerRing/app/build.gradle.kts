@@ -53,6 +53,7 @@ dependencies {
     // 模块配置页：miuix（HyperOS）Compose 组件
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4-rc01")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4-rc01")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4-rc01")
     implementation("androidx.activity:activity-compose:1.13.0")
     // Comppose 运行时版本与 miuix 0.9.4-rc01 编译时的 CMP 1.11.1 对齐
     implementation("org.jetbrains.compose.foundation:foundation:1.11.1")

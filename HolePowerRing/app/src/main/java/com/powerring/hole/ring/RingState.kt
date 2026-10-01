@@ -70,6 +70,7 @@ object RingState {
 
     fun attachContext(context: Context) {
         appContext = context.applicationContext
+        HookPrefs.hostContext = appContext
     }
 
     fun attachCutoutView(view: View) {

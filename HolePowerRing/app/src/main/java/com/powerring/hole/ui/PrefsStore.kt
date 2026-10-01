@@ -36,17 +36,17 @@ object PrefsStore {
     }
 
     fun setBoolean(context: Context, key: String, value: Boolean) {
-        prefs(context).edit().putBoolean(key, value).apply()
+        prefs(context).edit().putBoolean(key, value).commit()
         commit(context)
     }
 
     fun setFloat(context: Context, key: String, value: Float) {
-        prefs(context).edit().putFloat(key, value).apply()
+        prefs(context).edit().putFloat(key, value).commit()
         commit(context)
     }
 
     fun setInt(context: Context, key: String, value: Int) {
-        prefs(context).edit().putInt(key, value).apply()
+        prefs(context).edit().putInt(key, value).commit()
         commit(context)
     }
 
