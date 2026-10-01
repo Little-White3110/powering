@@ -8,11 +8,17 @@ import com.powerring.hole.core.ModuleLog
 /**
  * 挖孔环形电量绘制器（方案 A：直接挂在系统挖孔装饰 View 的 onDraw 之后）。
  *
- * 视觉规范对齐 miuix CircularProgressIndicator：
+ * 几何与动效规范对齐 miuix CircularProgressIndicator：
  * - 圆形进度，起点 -90°（12 点方向），圆角线帽（StrokeCap.ROUND）
- * - 底槽使用 miuix sliderBackground 令牌色
- * - 充电使用 primary 蓝，低电使用 error 红，省电使用琥珀色（应用自定义语义色）
  * - 充电时两层低透明度外扩弧模拟辉光（不使用 setShadowLayer，兼容性更好）
+ *
+ * 配色策略（2026-10-01 改造）：
+ * 1. 开启自定义色 → 固定用 [RingConfig.customColor]
+ * 2. 未开启且读到了系统电池图标 → 五种状态全部跟随原生图标颜色
+ *    （普通 / 低电 / 省电 / 性能 / 充电），底槽取进度色的低透明度版本
+ * 3. 读不到（Hook 未装上 / 机型类名不同）→ 回退 miuix 语义色：
+ *    底槽用 sliderBackground 令牌色、充电 primary 蓝、低电 error 红、
+ *    省电琥珀（应用自定义语义色）
  */
 object RingRenderer {
 
@@ -21,6 +27,12 @@ object RingRenderer {
 
     /** 低电量阈值（百分比） */
     private const val LOW_BATTERY_THRESHOLD = 15
+
+    /**
+     * 跟随系统电池图标颜色时，底槽取进度色该比例的透明度。
+     * 与自定义色分支的 0x26（约 15%）保持同一量级，视觉上与原生图标一致。
+     */
+    private const val TRACK_ALPHA = 0x33
 
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -67,20 +79,32 @@ object RingRenderer {
         val expand = 1f - state.collapseProgress.coerceIn(0f, 1f)
         if (expand <= 0.01f) return
 
-        // 颜色选择：自定义色（覆盖一切）> 低电红 > 充电蓝 > 省电琥珀 > 跟随状态栏图标色
-        val progressColor = scaleAlpha(when {
+        // 颜色优先级：自定义色（覆盖一切）> 系统电池图标调色板 > 内置语义色回退。
+        // followSystem 为假时行为与改造前逐像素一致（Hook 失效 / 开启自定义色的兜底）。
+        val palette = state.batteryPalette
+        val followSystem = !config.useCustomColor && palette.ready
+        val rawProgress = when {
             config.useCustomColor -> config.customColor
+            // 顺序与系统 MiuiBatteryMeterIconView.getProgressStatus() 的状态集一致：
+            // 充电（含快充）> 性能模式 > 省电模式 > 低电量 > 普通
+            followSystem && palette.chargingNow -> palette.charging
+            followSystem && palette.performanceNow -> palette.performance
+            followSystem && palette.powerSaveNow -> palette.powerSave
+            followSystem && palette.lowNow -> palette.low
+            followSystem -> state.normalColor
             state.level <= LOW_BATTERY_THRESHOLD -> MiuixPalette.errorColor(darkIcons)
             state.charging -> MiuixPalette.primaryColor(darkIcons)
             state.powerSave -> MiuixPalette.POWER_SAVE_AMBER
             else -> MiuixPalette.foregroundColor(darkIcons)
-        }, expand)
-        // 自定义色时底槽也用该色的低透明度版本（alpha ~15%），视觉更统一
-        val trackColor = scaleAlpha(if (config.useCustomColor) {
-            (0x26 shl 24) or (progressColor and 0x00FFFFFF)
-        } else {
-            MiuixPalette.trackColor(darkIcons)
-        }, expand)
+        }
+        // 自定义色 / 跟随系统色时，底槽取进度色的低透明度版本，视觉更统一
+        val rawTrack = when {
+            config.useCustomColor -> (0x26 shl 24) or (rawProgress and 0x00FFFFFF)
+            followSystem -> (TRACK_ALPHA shl 24) or (rawProgress and 0x00FFFFFF)
+            else -> MiuixPalette.trackColor(darkIcons)
+        }
+        val progressColor = scaleAlpha(rawProgress, expand)
+        val trackColor = scaleAlpha(rawTrack, expand)
 
         // 用户手动微调：缩放（半径）+ 上下左右偏移
         val baseRadius = (hole.holeRadius + gap + stroke / 2f) * config.scale

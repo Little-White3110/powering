@@ -20,7 +20,7 @@ HolePowerRing（挖孔电量环）：一个面向 **HyperOS / MIUI** 的 **LSPos
     - `ui/` — miuix 设置页
   - `xposedstub/` — Xposed API 编译桩，**仅 `compileOnly`，绝不打进 APK**
 - `apks/` — 逆向用的目标 APK（SystemUI、系统界面组件插件），**不要修改或删除**
-- `work/` — Python DEX 静态分析脚本（`dexlib.py`、`dump_class.py`、`find_classes.py`、`find_strings.py`、`method_strings.py`、`xref.py`）与产物 `sysui/`、`plugin/`
+- `work/` — Python DEX 静态分析脚本（`dexlib.py`、`dump_class.py`、`find_classes.py`、`find_strings.py`、`method_strings.py`、`xref.py`、`method_refs.py`）与产物 `sysui/`、`plugin/`
 - `挖孔环形电量LSP模块-可行性分析报告.md` — 逆向结论与技术方案，**Hook 点选型前先读它**
 - `lsposed-dev-guide.md` — LSPosed 开发参考
 
@@ -67,6 +67,10 @@ python xref.py              # 交叉引用分析
 - **状态栏电池管线：已确认（2026-10-01）走传统 MIUI View 管线**（原为待验证项）。真机日志中 `MiuiStatusBatteryContainer` 实际实例化，视图链为 `MiuiStatusBatteryContainer <- MiuiNotificationStatusContainer <- ... <- ComposeView <- StatusBarWindowView`，`setIsHideBattery` 原生路径生效
 - 仅适配系统界面 17.03.260226.r / 插件 18.2.2.2.0；其他版本类名与方法签名可能不同，反射处要做好找不到类时的降级
 - 沉浸收起检测已在 25102RKBEC 验证通过，但**信号源与最初设计不同**：环窗口（type=2009）不派发 `statusBars` insets（`statusTop` 恒为 0），实际改用 `StatusBarWindowStateController$commandQueueCallback$1.setWindowState(III)`。该项版本敏感，换机型须先用 `work/dump_class.py` 核对类名与方法签名（详见可行性分析报告 §10）
+- **窗口层级已实测（2026-10-01）**：环与灵动岛窗口同为 `type=2009` / `mBaseLayer=191000`，同层带内**后创建的 surface 叠在上**。环在 `Application.onCreate` 加窗口、岛在插件协程里加，必然更晚 ⇒ **岛会盖住环**（A/B 截图已证）。修复：环窗口抬到 `type=2006`（本机层带 231000 > 191000）。
+  - **判读铁律：同层带内禁止用 `dumpsys window windows` 的 `Window #N` 判断叠加顺序——同带内它与实际合成顺序相反**；必须用 `dumpsys SurfaceFlinger --layers` 的 `Output Layer` 数组（自底向上打印）。本项目已在这上面栽过一次（早期误判"环在上"）。
+  - 详见可行性分析报告 §11 与 `docs/superpowers/plans/2026-10-01-ring-window-layer-priority.md`。**层带表是本机实测值不是 ROM 契约**，换机型必须先用 `dumpsys window windows | grep mBaseLayer` 重测
+- **电池图标取色链路：已确认（2026-10-01）**。`MiuiBatteryMeterIconView.onDarkChangeInternal()` 是系统给电池图标上色的唯一位置，`mLightColor`/`mDarkColor`/`mDarkIntensity` + 四个 `mBattery*Color` 字段可直接反射读取；反色动画时钟在 `LightBarTransitionsController.animateIconTint`。详见可行性分析报告 §12。**未覆盖**镂空样式 `MiuiHollowBatteryMeterIconView`。
 
 ## 不要做的事
 

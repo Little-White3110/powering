@@ -379,7 +379,7 @@ private fun AppearanceTabContent(
                             update(config.copy(useCustomColor = enabled))
                         },
                         title = "自定义环颜色",
-                        summary = "关闭时使用系统语义色（充电蓝/低电红/省电琥珀）",
+                        summary = "关闭时跟随系统电池图标颜色（普通/低电/省电/性能/充电）",
                         enabled = config.ringEnabled,
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))

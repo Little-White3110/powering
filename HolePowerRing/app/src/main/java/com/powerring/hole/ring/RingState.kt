@@ -1,8 +1,11 @@
 package com.powerring.hole.ring
 
+import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.Context
+import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.LinearInterpolator
 import android.graphics.Canvas
 import android.view.View
 import com.powerring.hole.core.HookPrefs
@@ -70,6 +73,41 @@ object RingState {
     private val levelInterpolator = DecelerateInterpolator(1.5f)
     private val COLLAPSE_DURATION_MS = 260L
 
+    /** 读不到系统常量时的兜底反色过渡时长 */
+    private const val DEFAULT_TINT_DURATION_MS = 250L
+
+    // ---- 系统电池图标调色板（跟随原生图标颜色） ----
+
+    /**
+     * 系统电池图标调色板；[BatteryPalette.ready] 为 false 时
+     * [RingRenderer] 回退到 [MiuixPalette] 的固定语义色。
+     */
+    @Volatile
+    var batteryPalette: BatteryPalette = BatteryPalette.EMPTY
+        private set
+
+    /**
+     * 普通态**当前实际显示**的颜色。
+     * 与 [batteryPalette.normal] 的区别：本字段可能处于过渡动画中间值，
+     * [RingRenderer] 在普通态分支读的是本字段。
+     */
+    @Volatile
+    var normalColor: Int = 0xFFFFFFFF.toInt()
+        private set
+
+    /** 反色过渡时长，优先取系统 LightBarTransitionsController 的常量，保证节奏一致。 */
+    @Volatile
+    var tintAnimationDurationMs: Long = DEFAULT_TINT_DURATION_MS
+        private set
+
+    private var colorAnimator: ValueAnimator? = null
+    private val argbEvaluator = ArgbEvaluator()
+    private var lastSystemColors: SystemBatteryColors? = null
+    private var lastDarkIntensity: Float = Float.NaN
+
+    /** 诊断日志节流：反色动画期间 onDarkChanged 每帧回调，逐帧打日志会刷屏。 */
+    private var lastColorLogMs = 0L
+
     val config: RingConfig
         get() = HookPrefs.get()
 
@@ -124,6 +162,90 @@ object RingState {
             invalidateAll()
         }
     }
+
+    /** 由 BatteryColorHook 在读到系统常量后调用；非法值忽略。 */
+    fun setTintAnimationDuration(ms: Long) {
+        if (ms > 0) tintAnimationDurationMs = ms
+    }
+
+    /**
+     * 写入系统电池图标的颜色与状态位。
+     *
+     * 普通态颜色的过渡分两种情况，这是"跟手又不突兀"的关键：
+     * - [SystemBatteryColors.darkIntensity] 变化：说明系统反色动画正在推进，
+     *   此时算出的目标色本身就是连续的，直接跟随，**不叠加**二次动画
+     *   （叠加会慢一拍，反而与状态栏错位）；
+     * - darkIntensity 没变、但浅/深色目标被换掉（主题切换、tint 区域变化）：
+     *   用与系统相同长度的 Argb 过渡补一次，避免硬切。
+     */
+    fun setSystemBatteryColors(colors: SystemBatteryColors) {
+        val last = lastSystemColors
+        if (last == colors) return
+        lastSystemColors = colors
+
+        val intensity = colors.darkIntensity.coerceIn(0f, 1f)
+        val intensityMoved = lastDarkIntensity.isNaN() || intensity != lastDarkIntensity
+        lastDarkIntensity = intensity
+
+        // 与系统 onDarkChangeInternal 一致：useTint 时用 tint 色作浅色端
+        val base = if (colors.useTint && colors.tint != 0) colors.tint else colors.light
+        val target = argbEvaluator.evaluate(intensity, base, colors.dark) as Int
+
+        batteryPalette = BatteryPalette(
+            ready = true,
+            normal = target,
+            low = colors.low,
+            powerSave = colors.powerSave,
+            performance = colors.performance,
+            charging = colors.charging,
+            chargingNow = colors.chargingNow,
+            performanceNow = colors.performanceNow,
+            powerSaveNow = colors.powerSaveNow,
+            lowNow = colors.lowNow,
+            darkIntensity = intensity,
+        )
+
+        if (intensityMoved) {
+            colorAnimator?.cancel()
+            colorAnimator = null
+            normalColor = target
+        } else {
+            animateNormalColorTo(target)
+        }
+
+        // 反色动画期间本方法每帧被调用，日志必须节流，否则一秒能刷出几十行
+        val now = SystemClock.uptimeMillis()
+        if (now - lastColorLogMs >= 1000L) {
+            lastColorLogMs = now
+            ModuleLog.i(
+                "环色跟随系统电池图标: di=$intensity normal=#${hex(target)} " +
+                    "low=#${hex(colors.low)} save=#${hex(colors.powerSave)} " +
+                    "perf=#${hex(colors.performance)} charge=#${hex(colors.charging)} " +
+                    "flags(charge=${colors.chargingNow},perf=${colors.performanceNow}," +
+                    "save=${colors.powerSaveNow},low=${colors.lowNow})",
+            )
+        }
+        invalidateAll()
+    }
+
+    /** 照抄 startLevelAnimation 的「取消旧动画 → 平滑过渡」模式。 */
+    private fun animateNormalColorTo(target: Int) {
+        val start = normalColor
+        colorAnimator?.let { if (it.isRunning) it.cancel() }
+        if (start == target) return
+        colorAnimator = ValueAnimator.ofObject(argbEvaluator, start, target).apply {
+            duration = tintAnimationDurationMs
+            // 系统 LightBarTransitionsController.animateIconTint 用的是 Interpolators.LINEAR，
+            // 曲线形状保持一致，环与状态栏图标才会严丝合缝地同步变色
+            interpolator = LinearInterpolator()
+            addUpdateListener {
+                normalColor = it.animatedValue as Int
+                invalidateAll()
+            }
+        }.also { it.start() }
+    }
+
+    private fun hex(color: Int): String = String.format("%08X", color)
 
     /**
      * 状态栏是否被系统自动收起（沉浸模式）。

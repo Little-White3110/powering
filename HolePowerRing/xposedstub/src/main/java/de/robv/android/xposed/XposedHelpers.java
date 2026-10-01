@@ -45,6 +45,10 @@ public final class XposedHelpers {
         return false;
     }
 
+    public static float getFloatField(Object obj, String fieldName) {
+        return 0f;
+    }
+
     public static Object callMethod(Object obj, String methodName, Object... args) {
         return null;
     }

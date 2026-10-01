@@ -315,6 +315,95 @@ API 选择：Modern Xposed API 102（参考工程内 [lsposed-dev-guide.md](file
 
 ---
 
+## 11. 窗口层级实测（2026-10-01，25102RKBEC / 17.03.260226.r）
+
+**目标：** 判定"环形电量被超级岛遮住"是否成立，并确定修复方式。
+
+**结论：遮挡成立。** 环与灵动岛窗口同层带，**同层带内后创建的 surface 叠在上**，而灵动岛的 surface 必然更晚创建 ⇒ 岛永远盖住环。修复：环窗口 type 从 2009 抬到 **2006**（本机层带 231000 > 191000）。
+
+> ⚠️ **判读铁律：同层带内禁止用 `dumpsys window windows` 的 `Window #N` 判断叠加顺序**——同带内它与实际合成顺序**相反**。必须用 `dumpsys SurfaceFlinger --layers` 的 `Output Layer` 数组（自底向上打印）。本节早期版本正是踩了这个坑得出相反结论，已更正。
+
+详见 `docs/superpowers/plans/2026-10-01-ring-window-layer-priority.md`（含完整 A/B 截图证据与实施计划）。
+
+### 11.1 层级判定模型（本机实测，两级）
+
+1. **层带**：WMS 用 `mBaseLayer = policy(type)` 把窗口分层带，`mBaseLayer` 越大越靠上。
+2. **带内顺序**：同 `mBaseLayer` 时两 surface 的 z 相同，最终叠加顺序由**创建先后**决定——**后创建者叠在上**。
+
+### 11.2 本机 type → 层带映射表
+
+| type | mBaseLayer | 本机实际使用者 |
+|---|---|---|
+| 2032 | 311000 | `com.omarea.vtools` |
+| 2016 | 301000 | `MiuiShellDropTarget` |
+| 2027 | 281000 | `GestureStubLeft/Right` |
+| 2019 | 241000 | `NavigationBar0` |
+| **2006** | **231000** | `AntiMistakeTouchView` ← **抬层目标** |
+| **2009** | **191000** | `DynamicIslandWindow` + `HolePowerRingWindow`（原设置） |
+| 2017 | 181000 | `NotificationModalWindowManager` |
+| 2040 | 171000 | `NotificationShade` |
+| 2000 | 151000 | `StatusBar` |
+| 2011 | 131000 | `InputMethod` |
+| 2038 | 111000 | `ShellDropTarget` |
+| —（应用窗口） | 21000 | 各 Activity |
+
+⚠️ **层带大小与 AOSP type 数值无关**（type=2000 的状态栏仅 151000，低于 type=2009 的 191000）。抬层必须查这张表。**该表为本机实测值而非 ROM 契约，换机型必须重测。**
+
+### 11.3 电量环 vs 灵动岛：遮挡成立
+
+两者 `type=2009`、`mBaseLayer=191000`、`mSubLayer=0` **完全相同**，`mAttrs` 除窗口大小与 flags 外无差异（同 `sim={adjust=pan}`、同 `layoutInDisplayCutoutMode=always`、同 `fmt=TRANSLUCENT`）。
+
+权威判据（岛显示内容时，`dumpsys SurfaceFlinger --layers`，**自底向上**）：
+
+```
+- Output Layer (VRI-com.powerring.hole/...SettingsActivity)   ← band 21000，应用窗口必然最底（方向锚点）
+- Output Layer (VRI-StatusBar)                    ← 151000
+- Output Layer (VRI-HolePowerRingWindow)          ← 191000  【环】
+- Output Layer (VRI-DynamicIslandWindow)          ← 191000  【岛】← 压在环之上
+- Output Layer (VRI-NavigationBar0)               ← 241000
+```
+
+连续 3 次采样一致。方向锚点：第一行是应用窗口，说明数组自底向上；`hwc: layer=0x...` 只是 layer 分配 id，**不是 z 值**，不可用于判读。
+
+**A/B 视觉证据**（同一 SystemUI 会话，只切换岛是否显示）：
+
+- 岛收起 → 环正常绘制（充电弧，见 `docs/images/island-down-ring-visible.png`）
+- 岛展开 → 环**完全不可见**（见 `docs/images/island-up-no-ring.png`）
+
+且在非全屏应用（设置页）中岛展开时环同样不可见，排除了"沉浸模式按设计隐藏环"的解释。
+
+### 11.4 为什么必然是岛赢
+
+| 事件 | 进程内时刻 |
+|---|---|
+| 环窗口 `addView` | `Application.onCreate`（模块最早钩子） |
+| 岛窗口 `addView` | 插件 `DynamicIslandWindowController.start()` 协程中，**必然更晚** |
+
+SystemUI 是"宿主 + 运行时加载插件"结构，插件 Startable 一定在宿主 `Application.onCreate` 之后启动。surface id 佐证：环 `#29646` < 岛 `#29696`（上一会话同样是环 `#28677` < 岛 `#29123`）。
+
+**这不是偶发竞态，而是结构性必然**——所以任何"同带内抢先后"的做法都是与必然输的规则对抗。
+
+### 11.5 灵动岛窗口创建路径（插件 18.2.2.2.0，`classes2.dex`）
+
+| 类 / 方法 | 行为 |
+|---|---|
+| `miui.systemui.dynamicisland.window.DynamicIslandWindowController.<init>` | 构造 `LayoutParams`，设 `gravity`/`layoutInDisplayCutoutMode`/`privateFlags`/`token`，`setTitle("DynamicIslandWindow")` |
+| `...DynamicIslandWindowController.start()` | `attach()` → `drawDebugWindowSize()` → `listenForVisibility()` → `listenForWatchOutsideTouch()` → `listenForWindowHeight()` |
+| `...DynamicIslandWindowController.attach()` | `scope.launch` 两个协程 |
+| `...DynamicIslandWindowController$attach$1.invokeSuspend` | **`WindowManager.addView(windowView, lp)`——岛窗口真正的创建点** |
+| `...DynamicIslandWindowController.apply()` / `apply$lambda$1` | `lp.copyFrom` → `postOnAnimation` → `updateViewLayout`（改属性，不改层带） |
+| `...DynamicIslandWindowController$attach$2.invoke(Throwable)` | 失败回滚：`removeView` + `setDying()` |
+
+全插件扫描 `WindowManager$LayoutParams` 字段写入只命中 3 处（`flags`/`height`/`gravity`/`privateFlags`/`token`），**岛运行期间从不修改自己的 `type`** ⇒ 抬层后不会被打回，修复单向稳定。
+
+### 11.6 备注
+
+- 本机 `type=2009` 在 `mAttrs` 中显示为 `ty=KEYGUARD_DIALOG`，`RingWindowController` 中"TYPE_KEYGUARD_DIALOG 槽位，MIUI 复用"的注释**准确无误**。
+- 抬到 `type=2006` 后环会盖过 `StatusBar`(151000)/`NotificationShade`(171000)/`NotificationModalWindowManager`(181000) 三带。环是 `TRANSLUCENT` 窗口、只在挖孔周画像素，实际遮挡面积极小；但 **`TYPE_SYSTEM_ALERT` 在锁屏/AOD 下是否被系统隐藏尚未验证**，是本修复的唯一未知项。
+- 本次取证 adb 为普通 shell 权限（无 root），**无法用 adb 重启 SystemUI**；安装新构建后须用设置页「重启系统界面」按钮复验。
+
+---
+
 ## 附录 A：关键类索引（逆向实证）
 
 **宿主 APK（com.android.systemui，17.03.260226.r）**
@@ -344,9 +433,13 @@ API 选择：Modern Xposed API 102（参考工程内 [lsposed-dev-guide.md](file
 | `miui.systemui.dynamicisland.DynamicIslandBackgroundView` | 岛背景 View：`actualLeft/Top/Width/Height`、`onDraw`、`stokeWidth` |
 | `miui.systemui.dynamicisland.anim.DynamicIslandAnimationController` / `...AnimationDelegate` | 岛状态机与全套转场动画 |
 | `miui.systemui.dynamicisland.DynamicIslandConstants` | action/extra 常量（`ACTION_BACK_REQUEST_CUTOUT_Y/HEIGHT`、烧屏避让 action 等） |
+| `miui.systemui.dynamicisland.window.DynamicIslandWindowController` | **岛窗口宿主**：`start()`/`attach()`/`apply()`，持 `WindowManager` 与 `lp`/`lpChanged` |
+| `...DynamicIslandWindowController$attach$1` | `invokeSuspend` 中 `WindowManager.addView`——**岛窗口真正的创建点** |
+| `...DynamicIslandWindowController$attach$2` | `invoke(Throwable)` 中 `removeView` + `setDying`——创建失败回滚 |
+| `miui.systemui.dynamicisland.window.DynamicIslandWindowView` / `DynamicIslandWindowState` / `DynamicIslandWindowStateInteractor` | 岛窗口内容 View 与状态源 |
 
 ## 附录 B：环境备注
 
-- 逆向工具：aapt2（build-tools 36.0.0）+ 自研轻量 DEX 解析脚本（位于 `work/`：dexlib.py、find_classes.py、dump_class.py、xref.py、method_strings.py、find_strings.py），无加固，证据可复现。
-- 当前无连接设备（`adb devices` 为空），阶段 0 动态验证待设备接入后执行。
+- 逆向工具：aapt2（build-tools 36.0.0）+ 自研轻量 DEX 解析脚本（位于 `work/`：dexlib.py、find_classes.py、dump_class.py、xref.py、method_strings.py、find_strings.py、method_refs.py），无加固，证据可复现。
+- 已连接验证设备：**25102RKBEC（myron）**，系统界面 17.03.260226.r / 插件 18.2.2.2.0，1200x2608 @480dpi，adb 为普通 shell 权限（无 root，`killall com.android.systemui` 返回 `Operation not permitted`，重启 SystemUI 须用设置页按钮）。已完成的真机验证见 §10（沉浸收起检测）与 §11（窗口层级实测）。
 - 模块开发规范参考：[lsposed-dev-guide.md](file:///c:/Users/32732/Desktop/TRAE%20SOLO/powering/lsposed-dev-guide.md)（Modern Xposed API 102、scope.list、热重载、deoptimize 等）。

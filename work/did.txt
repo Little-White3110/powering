@@ -1,0 +1,175 @@
+======================================================================
+<init>(ILcom/android/systemui/dagger/DaggerReferenceGlobalRootComponent$ReferenceSysUIComponentImpl$SwitchingProvider$129;Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver;Lcom/android/systemui/dump/DumpManager;)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mContrastTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Lkotlinx/coroutines/flow/StateFlowImpl; mDarkChangeFlow : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeContrastColor : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Lcom/android/systemui/dump/DumpManager; mDumpManager : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/lang/String; mDumpableName : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mIconTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeContrastColor : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Landroid/util/ArrayMap; mReceivers : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver; mThemeObserver : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/util/ArrayList; mTintAreas : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Lcom/android/systemui/statusbar/phone/LightBarTransitionsController; mTransitionsController : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver;->Ljava/util/Map; map : Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver;
+    field: Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver;->Lkotlinx/coroutines/CoroutineScope; scope : Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver;
+    field: Lcom/android/systemui/statusbar/phone/SysuiDarkIconDispatcher$DarkChange;->Lcom/android/systemui/statusbar/phone/SysuiDarkIconDispatcher$DarkChange; EMPTY : Lcom/android/systemui/statusbar/phone/SysuiDarkIconDispatcher$DarkChange;
+    str  : 
+    str  : DarkIconDispatcherImpl
+    call : Landroid/util/ArrayMap;.<init>
+    call : Landroidx/appfunctions/AppFunctionDataSpec$$ExternalSyntheticOutline0;.m
+    call : Lcom/android/systemui/dagger/DaggerReferenceGlobalRootComponent$ReferenceSysUIComponentImpl$SwitchingProvider$129;.create
+    call : Lcom/android/systemui/dump/DumpManagerImpl;.registerNormalDumpable
+    call : Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver$register$job$1;.<init>
+    call : Ljava/lang/Object;.<init>
+    call : Ljava/lang/String;.valueOf
+    call : Ljava/util/ArrayList;.<init>
+    call : Ljava/util/Map;.put
+    call : Ljava/util/Map;.remove
+    call : Lkotlinx/coroutines/BuildersKt;.launch$default
+    call : Lkotlinx/coroutines/Job;.cancel
+    call : Lkotlinx/coroutines/flow/StateFlowKt;.MutableStateFlow
+======================================================================
+addDarkReceiver(Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mContrastTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->F mDarkIntensity : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mIconTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Landroid/util/ArrayMap; mReceivers : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/util/ArrayList; mTintAreas : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Z mUseTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    call : Landroid/util/ArrayMap;.put
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onDarkChanged
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onDarkChangedWithContrast
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onLightDarkTintChanged
+======================================================================
+applyDark(Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mContrastTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->F mDarkIntensity : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mIconTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Landroid/util/ArrayMap; mReceivers : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/util/ArrayList; mTintAreas : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Z mUseTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    call : Landroid/util/ArrayMap;.get
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onDarkChanged
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onDarkChangedWithContrast
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onLightDarkTintChanged
+======================================================================
+applyDarkIntensity(F)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mContrastTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->F mDarkIntensity : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeContrastColor : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mIconTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeContrastColor : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    call : Landroid/animation/ArgbEvaluator;.evaluate
+    call : Landroid/animation/ArgbEvaluator;.getInstance
+    call : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;.applyIconTint
+    call : Ljava/lang/Integer;.intValue
+    call : Ljava/lang/Integer;.valueOf
+======================================================================
+applyIconTint()V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mContrastTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Lkotlinx/coroutines/flow/StateFlowImpl; mDarkChangeFlow : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->F mDarkIntensity : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mIconTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Landroid/util/ArrayMap; mReceivers : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/util/ArrayList; mTintAreas : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Z mUseTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    call : Landroid/util/ArrayMap;.size
+    call : Landroid/util/ArrayMap;.valueAt
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onDarkChanged
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onDarkChangedWithContrast
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onLightDarkTintChanged
+    call : Lcom/android/systemui/statusbar/phone/SysuiDarkIconDispatcher$DarkChange;.<init>
+    call : Ljava/lang/Object;.getClass
+    call : Lkotlinx/coroutines/flow/StateFlowImpl;.updateState$1
+======================================================================
+dump(Ljava/io/PrintWriter;[Ljava/lang/String;)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mContrastTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->F mDarkIntensity : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeContrastColor : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mIconTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeContrastColor : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/util/ArrayList; mTintAreas : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Z mUseTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    str  :   mContrastTint: 0x
+    str  :   mDarkIntensity: 
+    str  :   mDarkModeContrastColor: 0x
+    str  :   mDarkModeIconColorSingleTone: 0x
+    str  :   mIconTint: 0x
+    str  :   mLightModeContrastColor: 0x
+    str  :   mLightModeIconColorSingleTone: 0x
+    str  :   mTintAreas: 
+    str  :   mUseTint:
+    str  : DarkIconDispatcher: 
+    str  : f
+    call : Lcom/android/keyguard/WallpaperProvider$$ExternalSyntheticOutline0;.m
+    call : Ljava/io/PrintWriter;.println
+    call : Ljava/lang/Integer;.toHexString
+    call : Ljava/lang/StringBuilder;.<init>
+    call : Ljava/lang/StringBuilder;.append
+    call : Ljava/lang/StringBuilder;.append
+    call : Ljava/lang/StringBuilder;.append
+    call : Ljava/lang/StringBuilder;.append
+    call : Ljava/lang/StringBuilder;.toString
+======================================================================
+getDarkModeIconColorSingleTone()I
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+======================================================================
+getLightModeIconColorSingleTone()I
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+======================================================================
+getTintAnimationDuration()I
+    field: Lcom/miui/utils/ComputilityUtils;->Z isLowLevel : Lcom/miui/utils/ComputilityUtils;
+    field: Lcom/miui/utils/ComputilityUtils;->Z isMidLowLevel : Lcom/miui/utils/ComputilityUtils;
+    field: Lcom/miui/utils/ComputilityUtils;->Z isNormalLevel : Lcom/miui/utils/ComputilityUtils;
+    field: Lcom/miui/utils/ComputilityUtils;->Z isSubMidLevel : Lcom/miui/utils/ComputilityUtils;
+======================================================================
+reapply()V
+    call : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;.applyIconTint
+======================================================================
+reapply(Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->F mDarkIntensity : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mDarkModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mIconTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->I mLightModeIconColorSingleTone : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Landroid/util/ArrayMap; mReceivers : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/util/ArrayList; mTintAreas : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Z mUseTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    call : Landroid/util/ArrayMap;.get
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onDarkChanged
+    call : Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;.onLightDarkTintChanged
+======================================================================
+removeDarkReceiver(Lcom/android/systemui/plugins/DarkIconDispatcher$DarkReceiver;)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Landroid/util/ArrayMap; mReceivers : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    call : Landroid/util/ArrayMap;.remove
+======================================================================
+setIconsDarkArea(Ljava/util/ArrayList;)V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/util/ArrayList; mTintAreas : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    call : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;.applyIconTint
+    call : Ljava/util/ArrayList;.addAll
+    call : Ljava/util/ArrayList;.clear
+    call : Ljava/util/ArrayList;.isEmpty
+======================================================================
+stop()V
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Lcom/android/systemui/dump/DumpManager; mDumpManager : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Ljava/lang/String; mDumpableName : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver; mThemeObserver : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;
+    field: Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver;->Ljava/util/Map; map : Lcom/android/systemui/statusbar/phone/MiuiThemeParamsObserver;
+    call : Lcom/android/systemui/dump/DumpManagerImpl;.unregisterDumpable
+    call : Ljava/util/Map;.remove
+    call : Lkotlinx/coroutines/Job;.cancel
+======================================================================
+useTint()Z
+    field: Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;->Z mUseTint : Lcom/android/systemui/statusbar/phone/DarkIconDispatcherImpl;

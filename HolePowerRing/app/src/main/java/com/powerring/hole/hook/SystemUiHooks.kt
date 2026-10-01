@@ -35,6 +35,13 @@ object SystemUiHooks {
             ModuleLog.e("明暗色 Hook 安装异常", t)
         }
 
+        // 电池图标取色（必须在隐藏之前装：隐藏只是置 GONE，View 仍在收系统回调）
+        try {
+            BatteryColorHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("电池图标取色 Hook 安装异常", t)
+        }
+
         // 电池图标隐藏
         try {
             BatteryHideHook.install(classLoader)
