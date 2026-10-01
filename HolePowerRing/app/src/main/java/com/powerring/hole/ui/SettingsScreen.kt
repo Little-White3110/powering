@@ -210,6 +210,19 @@ private fun SwitchTabContent(
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SwitchPreference(
+                        checked = config.restoreBatteryOnLandscape,
+                        onCheckedChange = { enabled ->
+                            PrefsStore.setBoolean(
+                                ctx, RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE, enabled,
+                            )
+                            update(config.copy(restoreBatteryOnLandscape = enabled))
+                        },
+                        title = "横屏时恢复电池图标",
+                        summary = "横屏时挖孔换到侧边、圆环无法贴合，此时恢复显示原生电池图标，避免电量指示丢失；关闭后横屏同样保持隐藏",
+                        enabled = config.ringEnabled && config.hideBattery,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SwitchPreference(
                         checked = config.levelAnim,
                         onCheckedChange = { enabled ->
                             PrefsStore.setBoolean(ctx, RingConfig.KEY_LEVEL_ANIM, enabled)
@@ -466,6 +479,7 @@ private fun AboutTabContent(
                     Text(
                         text = "提示：所有调节即时生效；息屏/AOD 期间自动隐藏圆环以防烧屏，" +
                             "状态栏自动收起（沉浸模式）时圆环同步收缩隐藏。" +
+                            "横屏时圆环无法贴合挖孔，默认会自动恢复原生电池图标。" +
                             "若调节后环与挖孔有偏差，优先用「缩放」对齐半径，再用偏移微调中心。",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         fontSize = MiuixTheme.textStyles.body2.fontSize,

@@ -28,6 +28,9 @@ object PrefsStore {
             chargingGlow = p.getBoolean(RingConfig.KEY_CHARGING_GLOW, true),
             collapseOnImmersive = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_IMMERSIVE, true),
             collapseOnIsland = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_ISLAND, false),
+            restoreBatteryOnLandscape = p.getBoolean(
+                RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE, true,
+            ),
             strokeWidthDp = p.getFloat(RingConfig.KEY_STROKE_WIDTH, 2.5f),
             offsetXDp = p.getFloat(RingConfig.KEY_OFFSET_X, 0f),
             offsetYDp = p.getFloat(RingConfig.KEY_OFFSET_Y, 0f),

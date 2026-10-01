@@ -1,5 +1,7 @@
 package com.powerring.hole.hook
 
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import com.powerring.hole.core.ModuleLog
 import com.powerring.hole.ring.RingState
@@ -20,7 +22,8 @@ import java.util.WeakHashMap
  *   内的实例，避免误伤控制中心/锁屏等其他电池视图。
  *
  * 安全策略：只有挖孔几何已确认可用（[RingState.cutoutEverResolved]）才隐藏，
- * 用户关闭开关后主动交还系统重新计算可见性，保证电量指示永不丢失。
+ * 且横屏（挖孔换到侧边、环画不出来）时把图标交还系统——环不可见就绝不丢失电量指示。
+ * 用户关闭开关、或从横屏回到竖屏时，容器与 View 两层都要重新评估并主动交还。
  */
 object BatteryHideHook {
 
@@ -37,14 +40,46 @@ object BatteryHideHook {
     private val knownViews: MutableSet<View> =
         Collections.newSetFromMap(WeakHashMap())
 
+    /**
+     * 已见到的 `MiuiStatusBatteryContainer` -> **系统最近一次原始请求**的隐藏值。
+     *
+     * before-hook 会把 `setIsHideBattery(false)` 改成 `true`，系统自己的
+     * `mIsHideBattery` 因此被写成 true；解除强制时必须把这个原始值交还回去，
+     * 否则图标不会重新出现（本表就是为这一步服务的）。
+     */
+    private val containerRequests: MutableMap<View, Boolean> = WeakHashMap()
+
     @Volatile
     private var containerCheckedLogged = false
 
-    /** 挖孔几何首次解析成功后（RingState 回调）重新评估所有已存在的电池 View。 */
+    /**
+     * 重新评估所有已存在的电池 View / 容器：挖孔几何就绪、或屏幕方向变化后调用。
+     *
+     * 方向变化时系统不会主动再调 `setIsHideBattery`，容器会一直停在我们改出来的
+     * `true` 上，所以解除强制必须显式交还；重入是安全的——回调里
+     * [RingState.shouldForceHideBattery] 此刻为 false，before-hook 不再改参。
+     */
     fun refreshAll() {
-        val snapshot = synchronized(knownViews) { knownViews.toList() }
-        snapshot.forEach { v ->
+        val views = synchronized(knownViews) { knownViews.toList() }
+        val containers = synchronized(containerRequests) { containerRequests.toList() }
+        val main = Handler(Looper.getMainLooper())
+        containers.forEach { (container, requested) ->
+            main.post { releaseContainer(container, requested) }
+        }
+        views.forEach { v ->
             if (v.isAttachedToWindow) v.post { applyHide(v) }
+        }
+    }
+
+    /** 把系统最近一次原始请求值交还给容器自身的方法；仍要求隐藏时（如在显示灵动岛）不越权。 */
+    private fun releaseContainer(container: View, requested: Boolean) {
+        if (RingState.shouldForceHideBattery(container)) return
+        if (!container.isAttachedToWindow) return
+        try {
+            XposedHelpers.callMethod(container, "setIsHideBattery", java.lang.Boolean.valueOf(requested))
+            ModuleLog.i("已交还电池容器隐藏状态: requested=$requested")
+        } catch (t: Throwable) {
+            ModuleLog.e("交还电池容器隐藏状态失败", t)
         }
     }
 
@@ -68,8 +103,20 @@ object BatteryHideHook {
                     containerClass, "setIsHideBattery", java.lang.Boolean::class.java,
                     object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            if (RingState.shouldForceHideBattery()) {
-                                param.args[0] = java.lang.Boolean.TRUE
+                            try {
+                                val container = param.thisObject as? View
+                                val requested = param.args[0] as? Boolean ?: false
+                                if (container != null) {
+                                    synchronized(containerRequests) {
+                                        containerRequests[container] = requested
+                                    }
+                                }
+                                if (RingState.shouldForceHideBattery(container)) {
+                                    param.args[0] = java.lang.Boolean.TRUE
+                                }
+                            } catch (t: Throwable) {
+                                // 异常时放行系统原值：宁可短暂露出原生图标，也不能卡住 SystemUI
+                                ModuleLog.e("setIsHideBattery 前置处理异常，放行系统值", t)
                             }
                         }
                     },
@@ -112,7 +159,7 @@ object BatteryHideHook {
 
     private fun applyHide(view: View) {
         synchronized(knownViews) { knownViews.add(view) }
-        val force = RingState.shouldForceHideBattery()
+        val force = RingState.shouldForceHideBattery(view)
         val inContainer = isInStatusBatteryContainer(view)
         if (!containerCheckedLogged) {
             containerCheckedLogged = true

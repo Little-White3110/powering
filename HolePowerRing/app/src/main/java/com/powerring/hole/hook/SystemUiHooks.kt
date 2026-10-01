@@ -52,6 +52,7 @@ object SystemUiHooks {
             BatteryHideHook.install(classLoader)
             // 挖孔几何确认通常晚于电池 View attach，就绪后补一次隐藏评估
             RingState.onCutoutResolved = { BatteryHideHook.refreshAll() }
+            RingState.onOrientationChanged = { BatteryHideHook.refreshAll() }
         } catch (t: Throwable) {
             ModuleLog.e("电池图标隐藏 Hook 安装异常", t)
         }

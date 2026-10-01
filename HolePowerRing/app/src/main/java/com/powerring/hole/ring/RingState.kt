@@ -3,10 +3,12 @@ package com.powerring.hole.ring
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.res.Configuration
 import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.graphics.Canvas
+import android.view.Surface
 import android.view.View
 import com.powerring.hole.core.HookPrefs
 import com.powerring.hole.core.ModuleLog
@@ -330,6 +332,23 @@ object RingState {
     @Volatile
     var onCutoutResolved: (() -> Unit)? = null
 
+    /**
+     * 屏幕方向变化回调。与 [onCutoutResolved] 同一模式：由 SystemUiHooks 接到
+     * `BatteryHideHook.refreshAll()`，data 层不直接依赖 hook 层。
+     */
+    @Volatile
+    var onOrientationChanged: (() -> Unit)? = null
+
+    /** 由 BatteryObserver 在 ACTION_CONFIGURATION_CHANGED 时调用。 */
+    fun notifyOrientationChanged() {
+        invalidateAll()
+        try {
+            onOrientationChanged?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("方向变化回调异常", t)
+        }
+    }
+
     fun markCutoutResolved() {
         if (!cutoutEverResolved) {
             cutoutEverResolved = true
@@ -342,10 +361,40 @@ object RingState {
         }
     }
 
-    /** 是否强制隐藏状态栏原电池图标：环开启 + 隐藏选项开启 + 挖孔确实存在。 */
-    fun shouldForceHideBattery(): Boolean {
+    /**
+     * 该 View 所在屏幕当前是否横屏。
+     *
+     * 判据取 `View.getDisplay().getRotation()`：横屏时挖孔安全区换到屏幕侧边，
+     * 顶部环窗口的几何不再成立、圆环必然画在窗口外，此时不该继续隐藏原生图标。
+     * 用 View 自己的 display 而不是全局状态：状态栏窗口与应用窗口的方向可能不一致。
+     *
+     * display 取不到（View 尚未 attach）时退回配置方向；再取不到按竖屏处理（保持现状）。
+     */
+    @Suppress("DEPRECATION")
+    fun isLandscape(view: View?): Boolean {
+        if (!config.restoreBatteryOnLandscape) return false
+        return try {
+            val rotation = view?.display?.rotation
+            if (rotation != null) {
+                rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+            } else {
+                val ctx = appContext ?: view?.context
+                ctx?.resources?.configuration?.orientation == Configuration.ORIENTATION_LANDSCAPE
+            }
+        } catch (t: Throwable) {
+            // 判定失败一律按竖屏走，宁可维持原有隐藏行为也不误改系统状态
+            ModuleLog.e("横屏判定失败，按竖屏处理", t)
+            false
+        }
+    }
+
+    /**
+     * 是否强制隐藏状态栏原电池图标：环开启 + 隐藏选项开启 + 挖孔确实存在，
+     * 且当前不是横屏（横屏时环不可见，图标交还系统，见 [isLandscape]）。
+     */
+    fun shouldForceHideBattery(view: View?): Boolean {
         val c = config
-        return c.ringEnabled && c.hideBattery && cutoutEverResolved
+        return c.ringEnabled && c.hideBattery && cutoutEverResolved && !isLandscape(view)
     }
 
     // ---- 绘制入口（由 Hook 在 DisplayCutoutBaseView.onDraw 后调用） ----

@@ -144,6 +144,9 @@ object HookPrefs {
                 values[RingConfig.KEY_COLLAPSE_ON_IMMERSIVE], d.collapseOnImmersive,
             ),
             collapseOnIsland = toBool(values[RingConfig.KEY_COLLAPSE_ON_ISLAND], d.collapseOnIsland),
+            restoreBatteryOnLandscape = toBool(
+                values[RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE], d.restoreBatteryOnLandscape,
+            ),
             strokeWidthDp = toFloat(values[RingConfig.KEY_STROKE_WIDTH], d.strokeWidthDp),
             offsetXDp = toFloat(values[RingConfig.KEY_OFFSET_X], d.offsetXDp),
             offsetYDp = toFloat(values[RingConfig.KEY_OFFSET_Y], d.offsetYDp),

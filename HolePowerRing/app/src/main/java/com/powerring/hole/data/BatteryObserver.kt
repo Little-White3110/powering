@@ -53,6 +53,10 @@ object BatteryObserver {
                         }
                     }
                     Intent.ACTION_SCREEN_OFF -> RingState.setScreenOn(false)
+                    Intent.ACTION_CONFIGURATION_CHANGED -> {
+                        // 屏幕旋转后系统不会再调 setIsHideBattery，必须自己重评估
+                        RingState.notifyOrientationChanged()
+                    }
                     Intent.ACTION_USER_PRESENT -> {
                         // 冷启动时 SystemUI 先于解锁起来，此刻配置（凭据加密存储）
                         // 还读不到，模块会退回默认值；解锁后补读一次，
@@ -75,6 +79,7 @@ object BatteryObserver {
             addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_CONFIGURATION_CHANGED)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(ACTION_CONFIG_CHANGED)
         }
