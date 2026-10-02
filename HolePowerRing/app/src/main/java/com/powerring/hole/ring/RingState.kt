@@ -314,9 +314,14 @@ object RingState {
     /**
      * 岛色冻结的进出场。
      *
-     * 进场：先 cancel 正在跑的跟随动画（值停在当前），近黑 → 等长动画平滑转白；
-     *       本就非近黑则一动不动（用户规则：不是黑的就不修改）。
-     * 退场：动画回到最近一次系统目标色（冻结期间记下的 [lastSystemNormalTarget]）。
+     * 进场：cancel 正在跑的跟随动画后**立即定格**为守卫判定的颜色（近黑→纯白，
+     *       本就非近黑则一动不动，用户规则：不是黑的就不修改）。
+     *       不能用动画滑过去：RingRenderer 每帧还会对渲染色套 [IslandColorGuard]
+     *       兜底自定义配色，动画前段 ≤64 的中间值被守卫顶成白、越过阈值又掉回
+     *       深灰，肉眼就是「闪一下、颜色不对」。定格后 normalColor 已是纯白，
+     *       守卫对它是 no-op，两层不再重叠。
+     * 退场：动画回到最近一次系统目标色（冻结期间记下的 [lastSystemNormalTarget]），
+     *       此时岛已消失、守卫停判，动画全程干净。
      * 与 collapseOnIsland 开关联动：配置翻转时也应重算（onCutoutDraw 的签名变化分支会调用）。
      */
     private fun applyIslandColorFreeze() {
@@ -335,7 +340,10 @@ object RingState {
                 "岛色冻结: current=#${hex(normalColor)} target=#${hex(target)} " +
                     "paletteNormal=#${hex(batteryPalette.normal)}",
             )
-            if (target != normalColor) animateNormalColorTo(target)
+            if (target != normalColor) {
+                normalColor = target
+                invalidateAll()
+            }
         } else {
             val back = lastSystemNormalTarget
             ModuleLog.i("岛色解锁: current=#${hex(normalColor)} back=${if (back == null) "null" else "#${hex(back)}"}")

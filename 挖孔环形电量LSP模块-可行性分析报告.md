@@ -497,16 +497,32 @@ Hook 点：`com.android.systemui.statusbar.views.MiuiBatteryMeterView.updateIsla
 
 **背景**：「有岛时隐藏圆环」（`collapse_on_island`）关闭时，灵动岛显示期间环保持展开；
 跟随系统取色在浅色背景下为黑色，与黑色岛体融为一体，电量不可读。
+早期只做每帧渲染色守卫，真机反馈：反色动画中间值在阈值上下反复进出，环色抽搐、
+深灰中间值仍不可见 ⇒ 改为「冻结 + 守卫」双层机制。
 
-**契约**（`ring/IslandColorGuard.kt`，渲染侧在 `RingRenderer` 四模式取色之后统一套用）：
+**契约**：
 
-- 生效条件：`islandShowing == true` 且 `collapseOnIsland == false`；
-- 判定：ARGB 的 R/G/B 三通道均 ≤ 64/255 视为近黑（覆盖纯黑、深灰、反色动画深色中间值）；
-- 动作：替换为白色并**保留原 alpha**（`0x80000000 → 0x80FFFFFF`）；
-- 不生效：其余任何颜色（充电蓝、低电红、四模式自定义色、已是白色）一律不动；
+- **冻结层**（`RingState.applyIslandColorFreeze`，管跟随系统的普通态）：
+  - 生效条件：`islandShowing && !collapseOnIsland`；
+  - 进场：cancel 在跑的跟随动画后把 `normalColor` **立即定格**为守卫判定色
+    （近黑→纯白，本就非近黑不动）。定格而非动画：动画中间值会被渲染守卫
+    每帧重判，产生「白→深灰→白」跳变；
+  - 冻结期间 `setSystemBatteryColors` 只把新算出的系统目标记入
+    `lastSystemNormalTarget`，**不再驱动** `normalColor`（岛期间环不跟随反色）；
+  - 退场：`animateNormalColorTo(lastSystemNormalTarget)` 一次性平滑补回，
+    此时守卫已停判，动画全程干净；
+  - `collapse_on_island` 开关翻转经 `onCutoutDraw` 配置签名分支重算。
+- **守卫层**（`ring/IslandColorGuard.kt`，`RingRenderer` 四模式取色后每帧套用，
+  兜底不经过 `normalColor` 的颜色源）：
+  - 判定：ARGB 的 R/G/B 三通道均 ≤ 64/255 视为近黑；
+  - 动作：替换为白色并**保留原 alpha**（`0x80000000 → 0x80FFFFFF`）；
+  - 不生效：其余任何颜色（充电蓝、低电红、四模式自定义色、已是白色）一律不动；
+  - 对冻结后的纯白 `normalColor` 是 no-op，两层不重叠。**两层都别删**。
 - 岛状态信号源沿用 §12 的宿主侧 `MiuiBatteryMeterView.updateIslandShowing`，无新增 Hook。
 
-**验证状态**：JVM 单测已覆盖判定与边界（通道 64/65、alpha 保留、两开关组合）；真机六项验收**尚未执行**。
+**验证状态**：JVM 单测覆盖守卫判定与边界（通道 64/65、alpha 保留、两开关组合，7 条）；
+真机第一轮验收发现抽搐问题已按上述定格方案修复，**修复后复验待执行**（重点：
+岛出现瞬间黑→白单跳、岛期间切浅/深背景环色恒定、岛消失一次性平滑回色不闪烁）。
 
 计划文档：`docs/superpowers/plans/2026-10-02-island-dark-ring-white.md`
 

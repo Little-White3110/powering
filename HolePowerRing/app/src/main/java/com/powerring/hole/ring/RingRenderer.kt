@@ -113,8 +113,10 @@ object RingRenderer {
                 }
             }
         }
-        // 灵动岛保护：岛是黑色药丸，环色跟到近黑就不可见，改白（保留 alpha）；
-        // 底槽与淡出都从守卫后的颜色派生，无需单独处理。见 IslandColorGuard。
+        // 灵动岛保护：岛是黑色药丸，环色跟到近黑就不可见，改白（保留 alpha）。
+        // 与 RingState 的岛色冻结是两层、各管各的：跟随系统的普通态由冻结机制
+        // 定格成白后流到这里已是白色、守卫 no-op；三种自定义配色模式与取色回退
+        // 链不经过 normalColor，只靠这里的守卫兜底。别删任何一层。
         val rawProgress = IslandColorGuard.ensureVisible(
             modeColor,
             islandShowing = state.islandShowing,
