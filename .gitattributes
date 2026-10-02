@@ -1,0 +1,5 @@
+# Gradle wrapper 脚本：仓库里一律存 LF。
+# gradlew 靠 `#!/usr/bin/sh` 解释执行，一旦被写成 CRLF，在 Linux runner 上会直接
+# 报 bad interpreter / Permission denied（exit 126）。
+gradlew text eol=lf
+gradlew.bat text eol=crlf
