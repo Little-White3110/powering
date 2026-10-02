@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.powerring.hole.ui
 
 import android.content.ClipData
@@ -7,10 +9,16 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -56,9 +64,15 @@ fun ConfigTransferDialog(
 private fun ExportConfigDialog(show: Boolean, config: RingConfig, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     // 每次打开重新生成：打开期间 config 不可能被其他入口改动（写入只发生在本页）
-    var text by remember(show) { mutableStateOf(ConfigJson.encode(config)) }
+    val text = remember(show) { ConfigJson.encode(config) }
 
-    OverlayDialog(show = show, title = "导出外观配置", onDismissRequest = onDismiss) {
+    OverlayDialog(
+        show = show,
+        modifier = transferImeModifier(),
+        title = "导出外观配置",
+        defaultWindowInsetsPadding = false,
+        onDismissRequest = onDismiss,
+    ) {
         Text(
             text = "把下面的 JSON 复制发给他人；对方在「导入外观配置」粘贴即可覆盖外观设置。不含「开关」页的功能开关。",
             fontSize = MiuixTheme.textStyles.body2.fontSize,
@@ -71,7 +85,8 @@ private fun ExportConfigDialog(show: Boolean, config: RingConfig, onDismiss: () 
                 .heightIn(max = 300.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            TextField(value = text, onValueChange = { text = it }, label = "配置 JSON")
+            // 只读：点按不聚焦、不弹键盘，弹窗不会因 imePadding 整体抬升
+            TextField(value = text, onValueChange = { }, label = "配置 JSON", readOnly = true)
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(
@@ -109,18 +124,29 @@ private fun ImportConfigDialog(
     val patch = remember(input, config) {
         if (input.isBlank()) null else ConfigJson.runCatchingPatch(input, config)
     }
+    // 响应式键盘状态（foundation 官方扩展属性，随键盘显隐触发重组）：
+    // 键盘弹出时把弹窗压成紧凑形态，配合 transferImeModifier 保证顶部不出屏
+    val keyboardVisible = WindowInsets.isImeVisible
 
-    OverlayDialog(show = show, title = "导入外观配置", onDismissRequest = onDismiss) {
-        Text(
-            text = "粘贴他人导出的 JSON。缺失的项保持你当前的值；有任何一项非法则整次导入失败、不做修改。",
-            fontSize = MiuixTheme.textStyles.body2.fontSize,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+    OverlayDialog(
+        show = show,
+        modifier = transferImeModifier(),
+        title = "导入外观配置",
+        defaultWindowInsetsPadding = false,
+        onDismissRequest = onDismiss,
+    ) {
+        if (!keyboardVisible) {
+            Text(
+                text = "粘贴他人导出的 JSON，或用「从剪贴板粘贴」导入。缺失的项保持你当前的值；有任何一项非法则整次导入失败、不做修改。",
+                fontSize = MiuixTheme.textStyles.body2.fontSize,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 300.dp)
+                .heightIn(max = if (keyboardVisible) 150.dp else 300.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
             TextField(value = input, onValueChange = { input = it }, label = "配置 JSON")
@@ -128,7 +154,7 @@ private fun ImportConfigDialog(
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = when {
-                input.isBlank() -> "等待粘贴…"
+                input.isBlank() -> "等待输入 / 粘贴…"
                 patch?.isSuccess == true -> "配置有效，应用后将覆盖当前外观设置"
                 else -> "✕ ${patch?.exceptionOrNull()?.message ?: "解析失败"}"
             },
@@ -166,6 +192,17 @@ private fun ImportConfigDialog(
         }
     }
 }
+
+/**
+ * 手动键盘避让：miuix 默认避让层把 ime 与 navigationBars 两段 padding 分开叠加，
+ * 本机 HyperOS 键盘弹出时抬升明显过高；改为对弹窗列施加 **ime∪navigationBars 单次
+ * 合并 padding**——键盘弹出贴键盘顶，收起贴手势条上方，不重复计算。
+ * 配合 OverlayDialog(defaultWindowInsetsPadding = false) 使用。
+ */
+@Composable
+private fun transferImeModifier(): Modifier = Modifier.windowInsetsPadding(
+    WindowInsets.ime.union(WindowInsets.navigationBars),
+)
 
 private fun copyToClipboard(ctx: Context, label: String, text: String) {
     runCatching {
