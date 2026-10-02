@@ -5,6 +5,46 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// ---------------------------------------------------------------------------
+// 版本号：默认值写在这里；
+// CI 推送 tag（如 v1.2.3）时由 .github/workflows/release.yml 通过
+// -PversionName=1.2.3 -PversionCode=1002003 覆盖，无需改代码。
+// ---------------------------------------------------------------------------
+fun gradleProp(name: String): String? =
+    (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() }
+
+val DEFAULT_VERSION_CODE = 1
+val DEFAULT_VERSION_NAME = "1.0.0"
+
+val appVersionCode: Int = gradleProp("versionCode")?.let {
+    val code = it.toIntOrNull()
+    require(code != null && code > 0) { "versionCode 必须是正整数，实际收到：$it" }
+    code
+} ?: DEFAULT_VERSION_CODE
+
+val appVersionName: String = gradleProp("versionName") ?: DEFAULT_VERSION_NAME
+
+// 发布签名：命令行属性或环境变量任一提供即可（CI 用环境变量传密钥库内容）。
+// 四要素齐全且密钥库文件存在时才启用真正的 release 签名；
+// 否则回落到 debug 签名，保证 `assembleRelease` 永远产出「可直接安装」的 APK。
+val releaseStoreFile = gradleProp("releaseStoreFile") ?: System.getenv("RELEASE_STORE_FILE")
+val releaseStorePassword = gradleProp("releaseStorePassword") ?: System.getenv("RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = gradleProp("releaseKeyAlias") ?: System.getenv("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = gradleProp("releaseKeyPassword") ?: System.getenv("RELEASE_KEY_PASSWORD")
+val releaseStoreType = gradleProp("releaseStoreType") ?: System.getenv("RELEASE_STORE_TYPE")
+
+val hasReleaseKeystore = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+    .all { !it.isNullOrEmpty() } && releaseStoreFile?.let { file(it).exists() } == true
+
+// 只在真的要打 release 包且缺密钥时提示，避免 IDE 同步等每次配置都刷屏
+val isReleaseTaskRequested = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+if (!hasReleaseKeystore && isReleaseTaskRequested) {
+    logger.lifecycle(
+        "[HolePowerRing] 未提供发布密钥（releaseStoreFile / releaseStorePassword / releaseKeyAlias / releaseKeyPassword），" +
+            "本次 release 构建回落为 debug 签名，仅供本地安装测试，不可作为正式发布包。"
+    )
+}
+
 android {
     namespace = "com.powerring.hole"
     // AGP 9.x 新 DSL（compileSdk 37，与参考工程一致）
@@ -18,14 +58,31 @@ android {
         applicationId = "com.powerring.hole"
         minSdk = 34
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                if (!releaseStoreType.isNullOrEmpty()) storeType = releaseStoreType
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

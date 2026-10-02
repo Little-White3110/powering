@@ -34,7 +34,15 @@ cd HolePowerRing
 
 工具链：JDK 17+（Gradle 可通过 foojay 自动下载 JDK 21）、Android SDK 37、`minSdk = 34`。Windows 下用 `gradlew.bat`。
 
-仓库**没有自动化测试**。验证只能靠真机：安装 APK → LSPosed 管理器启用模块 → 重启 SystemUI（`adb shell killall com.android.systemui`）→ 观察日志与界面。配置改动必须重启 SystemUI 才生效（配置在 SystemUI 进程内只读加载）。
+### 发布（GitHub Actions）
+
+`.github/workflows/release.yml`：**推送 `vX.Y.Z` 形式的 tag 即自动发版**——跑 `./gradlew test`（纯数据层 JVM 单测）+ `assembleRelease`，创建 GitHub Release 并挂上 APK 与 SHA256SUMS。手动触发发版、PR 只校验的分支行为，以及密钥配置，见 [docs/release-ci.md](docs/release-ci.md)。
+
+因此**发版不需要改 `build.gradle.kts` 里的版本号**——CI 从 tag 解析 `versionName`，按 `major×1000000 + minor×1000 + patch` 算出 `versionCode`，用 `-PversionName=` / `-PversionCode=` 注入。默认值仍写在 `app/build.gradle.kts`，本地构建行为不变。
+
+签名约定：release 包不签名无法安装。密钥以 `RELEASE_*` 环境变量传入（CI 来自 GitHub Secrets），**缺失时回落 debug 签名并打印警告而不是直接失败**——新增签名相关配置时保持这个回落行为。
+
+仓库**没有真机自动化测试**，验证仍需真机：安装 APK → LSPosed 管理器启用模块 → 重启 SystemUI（`adb shell killall com.android.systemui`）→ 观察日志与界面。配置改动必须重启 SystemUI 才生效（配置在 SystemUI 进程内只读加载）。
 
 ## 必须遵守的约定
 

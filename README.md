@@ -15,10 +15,12 @@
 
 ```
 powering/
+├── .github/workflows/       # GitHub Actions：推 tag 自动打包 + 发布 Release
 ├── HolePowerRing/          # LSPosed 模块工程（Gradle / Kotlin / Compose）
 │   ├── app/                # 模块主工程（Hook 逻辑 + 配置页）
 │   └── xposedstub/         # Xposed API 编译桩（仅 compileOnly，不打入 APK）
 ├── apks/                   # 逆向分析用的目标 APK（HyperOS 系统界面 / 系统界面组件插件）
+├── docs/                   # 专题文档（发布与 CI、方案计划、验证截图）
 ├── work/                   # DEX 静态逆向工具脚本（Python）与分析产物
 │   ├── dexlib.py           # DEX 解析基础库
 │   ├── dump_class.py       # 类/方法/字段转储
@@ -59,6 +61,19 @@ cd HolePowerRing
 # 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## 发布（推 tag 自动发版）
+
+[`.github/workflows/release.yml`](./.github/workflows/release.yml) 会在推送 `vX.Y.Z` 形式的 tag 时自动跑单测、打 `release` 包并创建 GitHub Release（APK + SHA256SUMS）。版本号直接从 tag 解析，无需改代码：
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3      # → 自动出包 + Release
+```
+
+`versionCode` 按 `major×1000000 + minor×1000 + patch` 计算（`v1.2.3` → 1002003）；也可在 Actions 页面手动填版本号发版。**发布前需先配置 4 个仓库 Secrets**（`RELEASE_KEYSTORE_BASE64` / `_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`），否则产物回落到 debug 签名。
+
+密钥生成、Secrets 配置、本地复现与排错见 **[docs/release-ci.md](./docs/release-ci.md)**。
+
 ## 安装与使用
 
 1. 设备需已 root 并安装 **LSPosed**（libxposed / 传统 Xposed API 均兼容，minVersion 82）
@@ -77,6 +92,7 @@ cd HolePowerRing
 ## 相关文档
 
 - [挖孔环形电量LSP模块-可行性分析报告.md](./挖孔环形电量LSP模块-可行性分析报告.md) — 目标 APK 逆向分析、Hook 点选型、风险与验证计划
+- [docs/release-ci.md](./docs/release-ci.md) — CI 发版流水线、发布密钥配置与本地复现
 - [lsposed-dev-guide.md](./lsposed-dev-guide.md) — LSPosed 开发参考
 
 ## 免责声明
