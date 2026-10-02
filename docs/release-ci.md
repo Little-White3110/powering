@@ -100,3 +100,16 @@ tag 形如 `v1.2` 或 `v1.2.3.4` 都会被拒绝（`::error::版本号格式非�
 
 **打包很慢**
 CI 用了 `gradle/actions/setup-gradle` 缓存依赖，首次构建会下载 Gradle 9.6.1、AGP 9.3.1 与 Android SDK 37，耐心等待。
+
+**`Warning: Failed to find package 'tools'`，job 在「准备 Android SDK」挂掉**
+`android-actions/setup-android@v3` 的 `packages` 默认值是 `tools platform-tools`，但那个早于 cmdline-tools 的 `tools` 包已被 Google 下架，`sdkmanager tools` 返回 exit code 1 就把 job 打断。工作流里已显式改成 `packages: 'platform-tools'`；Android SDK 37 与 build-tools 交给 AGP 在许可已接受的前提下自动补齐。升级该 action 时留意这个默认值。
+
+**`./gradlew: Permission denied`，exit code 126**
+`HolePowerRing/gradlew` 在仓库里丢了可执行位（模式是 `100644`）。Windows 上 `core.fileMode=false`，`chmod +x` 不会进索引，必须显式执行：
+
+```bash
+git update-index --chmod=+x HolePowerRing/gradlew
+git commit -m "fix(ci): 恢复 gradlew 可执行位"
+```
+
+仓库根目录的 `.gitattributes` 已把 `gradlew` 固定为 LF——它靠 `#!/usr/bin/sh` 解释执行，CRLF 会导致同类失败。
