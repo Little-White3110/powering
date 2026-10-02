@@ -135,8 +135,19 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # 注意：packages 里只留 platform-tools。
+      # android-actions/setup-android@v3 的默认值是 'tools platform-tools'，
+      # 而那个早于 cmdline-tools 的 tools 包已被 Google 从仓库下架，
+      # `sdkmanager tools` 会以 exit code 1 失败并让整个 job 挂掉
+      # （2026-10-02 实测，日志里是 "Warning: Failed to find package 'tools'"）。
+      # platform-tools 不参与打包，留着只为 adb 方便；Android SDK 37 与
+      # build-tools 由 AGP 在许可已接受的前提下自动补齐。
       - name: 准备 Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+          # 许可正文有几百行，默认全量打印会把日志冲垮
+          log-accepted-android-sdk-licenses: false
 
       - name: 缓存 Gradle
         uses: gradle/actions/setup-gradle@v4
