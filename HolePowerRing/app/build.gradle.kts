@@ -76,7 +76,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 不开 R8 时整个 Compose + miuix 依赖树（1.5 万个类）会原样进 dex，
+            // 实测 APK 23.5MB，其中 dex 占 22.9MB、resources 只有 0.3MB。
+            // 开启后未用到的 miuix 图标、window/embedding、materialkolor 等
+            // 才会被裁掉。入口与 Hook 相关的类由 proguard-rules.pro 显式 keep。
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = if (hasReleaseKeystore) {
                 signingConfigs.getByName("release")
