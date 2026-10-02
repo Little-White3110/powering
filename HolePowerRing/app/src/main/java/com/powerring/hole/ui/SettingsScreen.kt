@@ -2,7 +2,11 @@
 
 package com.powerring.hole.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
@@ -539,6 +543,34 @@ private fun AppearanceTabContent(
 // Tab 2：关于
 // ====================================================================
 
+private const val REPO_URL = "https://github.com/Little-white3110/powering"
+
+/**
+ * 打开项目仓库页面。
+ *
+ * 不用 `resolveActivity` 判断——Android 11+ 的包可见性过滤会让隐式 Intent 查不到
+ * 处理器而误报失败，直接 `startActivity` 不受该限制。真没有可处理 http 的 Activity
+ * 时（定制系统裁掉浏览器）退回复制链接，不弹异常。
+ */
+private fun openRepo(ctx: Context) {
+    val ok = runCatching {
+        ctx.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.isSuccess
+    if (ok) return
+    val copied = runCatching {
+        ctx.getSystemService(ClipboardManager::class.java)
+            ?.setPrimaryClip(ClipData.newPlainText("HolePowerRing 仓库", REPO_URL))
+    }.isSuccess
+    Toast.makeText(
+        ctx,
+        if (copied) "未找到浏览器，链接已复制到剪贴板" else "打开失败：未找到浏览器",
+        Toast.LENGTH_SHORT,
+    ).show()
+}
+
 @Composable
 private fun AboutTabContent(
     ctx: Context,
@@ -556,6 +588,12 @@ private fun AboutTabContent(
                         text = ctx.getString(R.string.module_description),
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    ArrowPreference(
+                        title = "项目仓库",
+                        summary = REPO_URL,
+                        onClick = { openRepo(ctx) },
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     Text(
