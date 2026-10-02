@@ -493,6 +493,23 @@ Hook 点：`com.android.systemui.statusbar.views.MiuiBatteryMeterView.updateIsla
 - [ ] 十六进制：`F7D` / `277AF7` / `80FFD700` 三种长度各生效一次；半截输入（如 `277A`）只变提示色不落盘
 - [ ] 稳定性：反复切模式 + 反复拖区间滑杆，`ANR in com.android.systemui` 计数为 0
 
+## 16. 灵动岛期间近黑环色保护（2026-10-02）
+
+**背景**：「有岛时隐藏圆环」（`collapse_on_island`）关闭时，灵动岛显示期间环保持展开；
+跟随系统取色在浅色背景下为黑色，与黑色岛体融为一体，电量不可读。
+
+**契约**（`ring/IslandColorGuard.kt`，渲染侧在 `RingRenderer` 四模式取色之后统一套用）：
+
+- 生效条件：`islandShowing == true` 且 `collapseOnIsland == false`；
+- 判定：ARGB 的 R/G/B 三通道均 ≤ 64/255 视为近黑（覆盖纯黑、深灰、反色动画深色中间值）；
+- 动作：替换为白色并**保留原 alpha**（`0x80000000 → 0x80FFFFFF`）；
+- 不生效：其余任何颜色（充电蓝、低电红、四模式自定义色、已是白色）一律不动；
+- 岛状态信号源沿用 §12 的宿主侧 `MiuiBatteryMeterView.updateIslandShowing`，无新增 Hook。
+
+**验证状态**：JVM 单测已覆盖判定与边界（通道 64/65、alpha 保留、两开关组合）；真机六项验收**尚未执行**。
+
+计划文档：`docs/superpowers/plans/2026-10-02-island-dark-ring-white.md`
+
 ---
 
 ## 附录 A：关键类索引（逆向实证）

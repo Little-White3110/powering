@@ -86,6 +86,8 @@ fun SettingsScreen(pagerState: PagerState) {
     var config by remember { mutableStateOf(PrefsStore.load(ctx)) }
     // 当前正在编辑的颜色（标签 + 初值 + 确认回调）；null 表示弹窗关闭
     var colorEditing by remember { mutableStateOf<ColorEditing?>(null) }
+    // 导入/导出弹窗种类；与 colorEditing 同理提升到根级，随 Tab 切换不丢
+    var transferKind by remember { mutableStateOf<TransferKind?>(null) }
 
     data class TabInfo(val label: String, val icon: ImageVector)
     val tabs = listOf(
@@ -125,6 +127,7 @@ fun SettingsScreen(pagerState: PagerState) {
                     update = { config = it },
                     contentPadding = contentPadding,
                     onEditColor = { colorEditing = it },
+                    onTransfer = { transferKind = it },
                 )
                 2 -> AboutTabContent(ctx, contentPadding)
             }
@@ -132,6 +135,19 @@ fun SettingsScreen(pagerState: PagerState) {
 
         // 色盘弹窗
         ColorPickerDialog(editing = colorEditing, onDismiss = { colorEditing = null })
+
+        // 外观配置导入/导出弹窗
+        ConfigTransferDialog(
+            kind = transferKind,
+            config = config,
+            onDismiss = { transferKind = null },
+            onApply = { patched ->
+                PrefsStore.applyAppearance(ctx, patched)
+                config = patched
+                transferKind = null
+                Toast.makeText(ctx, "外观配置已导入", Toast.LENGTH_SHORT).show()
+            },
+        )
     }
 }
 
@@ -263,6 +279,7 @@ private fun AppearanceTabContent(
     update: (RingConfig) -> Unit,
     contentPadding: PaddingValues,
     onEditColor: (ColorEditing) -> Unit,
+    onTransfer: (TransferKind) -> Unit,
 ) {
     // 打开共用色盘弹窗的简写，避免每一行都重复四个实参
     fun editColor(label: String, argb: Int, onResult: (Int) -> Unit) =
@@ -479,6 +496,25 @@ private fun AppearanceTabContent(
                             }
                         }
                     }
+                }
+            }
+
+            item(key = "transferTitle") {
+                SmallTitle("配置导入导出")
+            }
+            item(key = "transferCard") {
+                Card(modifier = Modifier.padding(horizontal = 12.dp)) {
+                    ArrowPreference(
+                        title = "导出外观配置",
+                        summary = "生成 JSON 并复制到剪贴板，可发送给他人",
+                        onClick = { onTransfer(TransferKind.Export) },
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    ArrowPreference(
+                        title = "导入外观配置",
+                        summary = "粘贴他人导出的 JSON，校验通过后一次性覆盖外观设置",
+                        onClick = { onTransfer(TransferKind.Import) },
+                    )
                 }
             }
 

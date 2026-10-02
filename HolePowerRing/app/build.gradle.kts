@@ -47,6 +47,10 @@ android {
 }
 
 dependencies {
+    // 外观配置 JSON 导入导出（ui/ConfigJson）。只用手动 JsonObject 树 API，
+    // 不依赖 @Serializable 代码生成，因此无需 kotlin 序列化编译器插件。
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+
     // 纯数据层（ring/CustomColors、ui/HexColor）的 JVM 单测；UI 与 Hook 侧仍靠真机验证
     testImplementation("junit:junit:4.13.2")
 

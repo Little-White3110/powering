@@ -72,6 +72,28 @@ object PrefsStore {
     }
 
     /**
+     * 导入外观配置用：把外观页全部设置项一次写入并提交，
+     * 只触发一次权限放开与一次 CONFIG_CHANGED 广播。
+     */
+    fun applyAppearance(context: Context, config: RingConfig) {
+        prefs(context).edit()
+            .putFloat(RingConfig.KEY_STROKE_WIDTH, config.strokeWidthDp)
+            .putFloat(RingConfig.KEY_SCALE, config.scale)
+            .putFloat(RingConfig.KEY_OFFSET_X, config.offsetXDp)
+            .putFloat(RingConfig.KEY_OFFSET_Y, config.offsetYDp)
+            .putInt(RingConfig.KEY_COLOR_MODE, config.colorMode)
+            .putInt(RingConfig.KEY_CUSTOM_COLOR, config.customColor)
+            .putInt(RingConfig.KEY_STATE_COLOR_NORMAL, config.stateColors.normal)
+            .putInt(RingConfig.KEY_STATE_COLOR_LOW, config.stateColors.low)
+            .putInt(RingConfig.KEY_STATE_COLOR_POWER_SAVE, config.stateColors.powerSave)
+            .putInt(RingConfig.KEY_STATE_COLOR_PERFORMANCE, config.stateColors.performance)
+            .putInt(RingConfig.KEY_STATE_COLOR_CHARGING, config.stateColors.charging)
+            .putString(RingConfig.KEY_LEVEL_RANGES, CustomColors.encodeRanges(config.levelRanges))
+            .commit()
+        commit(context)
+    }
+
+    /**
      * 有效配色模式。`color_mode` 是本版本新增的 key，老用户 XML 里只有
      * `use_custom_color`；未显式设置过模式时按旧值推导，这样模块升级后
      * **即使从不打开设置页**也不会把「固定单色」静默重置成「跟随系统」。

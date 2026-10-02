@@ -52,9 +52,10 @@ object RingState {
     @Volatile
     private var statusBarCollapsed: Boolean = false
 
-    /** 最近一次上报的灵动岛显示状态（由 IslandVisibilityHook 驱动） */
+    /** 最近一次上报的灵动岛显示状态（由 IslandVisibilityHook 驱动，渲染侧只读） */
     @Volatile
-    private var islandShowing: Boolean = false
+    var islandShowing: Boolean = false
+        private set
 
     private var collapseAnimator: ValueAnimator? = null
     private val collapseInterpolator = DecelerateInterpolator(1.5f)
@@ -107,6 +108,17 @@ object RingState {
     private val argbEvaluator = ArgbEvaluator()
     private var lastSystemColors: SystemBatteryColors? = null
     private var lastDarkIntensity: Float = Float.NaN
+
+    /**
+     * 「岛期间冻结普通态跟随」是否生效。
+     * 生效条件：灵动岛显示 且 「有岛时隐藏圆环」关闭（islandShowing && !collapseOnIsland）。
+     * 冻结期间系统每帧算出的新目标色只记入 [lastSystemNormalTarget]，不驱动 normalColor，
+     * 避免跟随反色动画中间值时环色来回抽搐。只在 SystemUI 主线程读写。
+     */
+    private var islandColorFrozen = false
+
+    /** 最近一次由系统色算出的普通态目标色；解锁时一次性补回。 */
+    private var lastSystemNormalTarget: Int? = null
 
     /** 诊断日志节流：反色动画期间 onDarkChanged 每帧回调，逐帧打日志会刷屏。 */
     private var lastColorLogMs = 0L
@@ -224,7 +236,10 @@ object RingState {
             darkIntensity = intensity,
         )
 
-        if (continuous || intensityMoved) {
+        lastSystemNormalTarget = target
+        if (islandColorFrozen) {
+            // 岛显示期间不跟随：冻结/解锁切换见 applyIslandColorFreeze，解锁时补这一次动画。
+        } else if (continuous || intensityMoved) {
             // 连续路径：目标色每帧都在变，直接跟随系统时钟，不叠加二次动画
             colorAnimator?.cancel()
             colorAnimator = null
@@ -293,6 +308,39 @@ object RingState {
         val target = collapseTarget()
         ModuleLog.i("灵动岛显示状态: showing=$showing 沉浸=$statusBarCollapsed 收起目标=$target")
         animateCollapseTo(target)
+        applyIslandColorFreeze()
+    }
+
+    /**
+     * 岛色冻结的进出场。
+     *
+     * 进场：先 cancel 正在跑的跟随动画（值停在当前），近黑 → 等长动画平滑转白；
+     *       本就非近黑则一动不动（用户规则：不是黑的就不修改）。
+     * 退场：动画回到最近一次系统目标色（冻结期间记下的 [lastSystemNormalTarget]）。
+     * 与 collapseOnIsland 开关联动：配置翻转时也应重算（onCutoutDraw 的签名变化分支会调用）。
+     */
+    private fun applyIslandColorFreeze() {
+        val shouldFreeze = islandShowing && !config.collapseOnIsland
+        if (shouldFreeze == islandColorFrozen) return
+        islandColorFrozen = shouldFreeze
+        if (shouldFreeze) {
+            colorAnimator?.cancel()
+            colorAnimator = null
+            val target = IslandColorGuard.ensureVisible(
+                normalColor,
+                islandShowing = true,
+                collapseOnIsland = false,
+            )
+            ModuleLog.i(
+                "岛色冻结: current=#${hex(normalColor)} target=#${hex(target)} " +
+                    "paletteNormal=#${hex(batteryPalette.normal)}",
+            )
+            if (target != normalColor) animateNormalColorTo(target)
+        } else {
+            val back = lastSystemNormalTarget
+            ModuleLog.i("岛色解锁: current=#${hex(normalColor)} back=${if (back == null) "null" else "#${hex(back)}"}")
+            if (back != null) animateNormalColorTo(back)
+        }
     }
 
     /** 两条收起通路合并成一个目标值：沉浸收起、灵动岛显示，任一命中即收缩。 */
@@ -403,6 +451,7 @@ object RingState {
         if (sig != lastConfigSig) {
             lastConfigSig = sig
             animateCollapseTo(collapseTarget())
+            applyIslandColorFreeze()
             invalidateAll()
         }
         if (!c.ringEnabled || !screenOn) return

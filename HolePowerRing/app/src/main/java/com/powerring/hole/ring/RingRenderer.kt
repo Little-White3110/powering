@@ -79,7 +79,7 @@ object RingRenderer {
         // 四种模式互斥；分支只决定「进度色从哪来」，几何与动画一律不受影响。
         val palette = state.batteryPalette
         val fromUserOrSystem: Boolean
-        val rawProgress: Int = when (config.colorMode) {
+        val modeColor: Int = when (config.colorMode) {
             RingConfig.MODE_FIXED_COLOR -> {
                 fromUserOrSystem = true
                 config.customColor
@@ -113,6 +113,13 @@ object RingRenderer {
                 }
             }
         }
+        // 灵动岛保护：岛是黑色药丸，环色跟到近黑就不可见，改白（保留 alpha）；
+        // 底槽与淡出都从守卫后的颜色派生，无需单独处理。见 IslandColorGuard。
+        val rawProgress = IslandColorGuard.ensureVisible(
+            modeColor,
+            islandShowing = state.islandShowing,
+            collapseOnIsland = config.collapseOnIsland,
+        )
         // 来自用户配置或系统调色板时，底槽取进度色的低透明度版本，视觉更统一；
         // 只有退回内置令牌时才用 sliderBackground 槽色。
         val rawTrack = if (fromUserOrSystem) {
