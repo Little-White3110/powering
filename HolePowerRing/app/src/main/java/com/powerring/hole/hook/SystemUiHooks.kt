@@ -71,6 +71,13 @@ object SystemUiHooks {
             ModuleLog.e("灵动岛显隐探针安装异常", t)
         }
 
+        // 截图采集点探针（FLAG_SECURE 被特权截图绕过，改为采集前 SF 层临时隐藏）
+        try {
+            ScreenshotCaptureHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("截图采集 Hook 安装异常", t)
+        }
+
         // Application.onCreate 后拿到 Context：注册电量监听 + 添加环窗口
         XposedHelpers.findAndHookMethod(
             Application::class.java,
@@ -83,6 +90,8 @@ object SystemUiHooks {
                         BatteryObserver.start(app)
                         HookPrefs.refresh()
                         RingWindowController.attach(app)
+                        RingState.onConfigApplied = { RingWindowController.applyScreenshotHide() }
+                        RingState.onCutoutFrame = { RingWindowController.syncScreenshotExclusion() }
                         ModuleLog.i("SystemUI Application 初始化完成")
                     } catch (t: Throwable) {
                         ModuleLog.e("Application onCreate Hook 异常", t)

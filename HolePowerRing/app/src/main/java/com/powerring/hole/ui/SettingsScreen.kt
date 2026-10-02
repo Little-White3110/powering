@@ -231,6 +231,19 @@ private fun SwitchTabContent(
                         summary = "灵动岛（超级岛）显示时，圆环像全屏沉浸时一样向内收缩并淡出",
                         enabled = config.ringEnabled,
                     )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SwitchPreference(
+                        checked = config.hideOnScreenshot,
+                        onCheckedChange = { enabled ->
+                            PrefsStore.setBoolean(
+                                ctx, RingConfig.KEY_HIDE_ON_SCREENSHOT, enabled,
+                            )
+                            update(config.copy(hideOnScreenshot = enabled))
+                        },
+                        title = "截图时隐藏圆环",
+                        summary = "截图与录屏画面中不再包含电量环（屏幕上仍正常显示）；开关即时生效，无需重启系统界面",
+                        enabled = config.ringEnabled,
+                    )
                 }
             }
             item(key = "systemTitle") {

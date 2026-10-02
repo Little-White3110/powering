@@ -131,7 +131,7 @@ object RingState {
     private var lastConfigSig: String = ""
 
     private fun RingConfig.signature() =
-        "$ringEnabled|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
+        "$ringEnabled|$hideOnScreenshot|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
             "$colorMode|$customColor|" +
             "$collapseOnImmersive|$collapseOnIsland|" +
             "${stateColors.normal},${stateColors.low},${stateColors.powerSave}," +
@@ -385,6 +385,22 @@ object RingState {
     var onCutoutResolved: (() -> Unit)? = null
 
     /**
+     * 配置签名变化的回调（主线程，onCutoutDraw 签名分支内触发）。
+     * 窗口 flags 类配置（如截图隐藏的 FLAG_SECURE）必须在主线程
+     * updateViewLayout，不能走绘制路径——由 RingWindowController 注册。
+     */
+    @Volatile
+    var onConfigApplied: (() -> Unit)? = null
+
+    /**
+     * 每次挖孔绘制的回调（主线程）。供轻量的自愈式同步用：环窗口的
+     * SurfaceControl 会在灭屏/旋转时被系统重建，SF 层的采集排除标志
+     * 需要跟着新身份重打。实现方必须自己做去重，绝不能在这里做重活。
+     */
+    @Volatile
+    var onCutoutFrame: (() -> Unit)? = null
+
+    /**
      * 屏幕方向变化回调。与 [onCutoutResolved] 同一模式：由 SystemUiHooks 接到
      * `BatteryHideHook.refreshAll()`，data 层不直接依赖 hook 层。
      */
@@ -460,7 +476,17 @@ object RingState {
             lastConfigSig = sig
             animateCollapseTo(collapseTarget())
             applyIslandColorFreeze()
+            try {
+                onConfigApplied?.invoke()
+            } catch (t: Throwable) {
+                ModuleLog.e("配置应用回调异常", t)
+            }
             invalidateAll()
+        }
+        try {
+            onCutoutFrame?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("环帧回调异常", t)
         }
         if (!c.ringEnabled || !screenOn) return
         try {
