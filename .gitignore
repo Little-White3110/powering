@@ -1,2 +1,5 @@
 # WorkBuddy 本地工作目录
 .workbuddy/
+
+# 逆向取证产物（设备 framework 等，体积大且可再生）
+work/device-fw/

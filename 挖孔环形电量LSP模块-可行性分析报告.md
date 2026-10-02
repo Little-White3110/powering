@@ -528,6 +528,65 @@ Hook 点：`com.android.systemui.statusbar.views.MiuiBatteryMeterView.updateIsla
 
 ---
 
+## 17. 截图时隐藏电量环（2026-10-03，真机已验证）
+
+设置键 `hide_on_screenshot`（默认开，独立开关，热生效）。环在屏幕上常显，
+只从截图/录屏/投屏画面中排除。本节记录信号源调研与三轮真机迭代——这是本仓库
+第一个"静态分析结论被真机推翻后靠运行时取证定位"的机制，方法论值得复用。
+
+### 17.1 信号源调研（静态结论部分被真机推翻）
+
+- 宿主 APK 内有完整 AOSP 截图管线：`TakeScreenshotService`（manifest 已注册）、
+  `TakeScreenshotExecutorImpl`、`ScreenshotController`、`ImageCaptureImpl`。
+- `ImageCaptureImpl.captureDisplay(ILandroid/graphics/Rect;)` 是采集点，xref 实证
+  三条调用路（全屏控制器 / 策略处理器 / 部分截图），内部经
+  `IWindowManager.captureDisplay` + `ScreenCaptureInternal$CaptureArgs`（仅 setSourceCrop）。
+- **真机推翻**：上述管线在本机是休眠代码——真实截图引擎是独立应用
+  `com.miui.screenshot`（product 应用，uid 10169，持 `READ_FRAME_BUFFER`）。
+  自触发截图（`input keycombination 26 25`）+ 全量 logcat 实锤：
+  `ScreenshotFinish` / `GlobalScreenshot` / `VRI[ScreenshotAnimation]` 全部来自
+  该进程，SystemUI 进程内零采集活动。
+- `com.miui.systemui.screenshot.ScreenshotHelper.takeScreenshot()` 仅广播
+  `android.intent.action.CAPTURE_SCREENSHOT`。
+
+### 17.2 三轮机制迭代（每轮都有 dumpsys/日志实证）
+
+1. **FLAG_SECURE（计划主案，判死）**：环窗口 flags 成功带上 SECURE
+   （`dumpsys window HolePowerRingWindow` 的 `fl=` 可见），但截图仍含环。
+   结论：**HyperOS 截图以特权身份采集，连安全层一起捕获**，FLAG_SECURE 的
+   非特权排除规则对它无效。保留该 flag 作投屏等非特权采集场景的兜底。
+2. **Hook captureDisplay（备案案，落空）**：Hook 安装成功（日志可证）但永不
+   触发——真实引擎在 com.miui.screenshot 进程，超出 systemui 作用域（见 17.1）。
+   该 Hook 保留：换到走 AOSP 管线的 ROM/机型时自动生效，配合
+   `CaptureHideCounter` 在 before 提交 SF 层临时隐藏、after 计数归零后延时恢复。
+3. **setSkipScreenshot（最终方案，真机验证通过）**：反射调用隐藏 API
+   `SurfaceControl.Transaction.setSkipScreenshot(sc, true)`（本机 framework.jar
+   实证存在，签名 `(Landroid/view/SurfaceControl;Z)`）。SF 层硬排除：屏幕正常
+   合成，任何来源的采集（截图/录屏/投屏）都拿不到该 layer，与 FLAG_SECURE 的
+   "可被特权绕过"不是同一层规则。
+
+### 17.3 契约与实现要点
+
+- 句柄获取：`View.getViewRootImpl()` → `ViewRootImpl.mSurfaceControl`
+  （字段名经设备 framework.jar 反查实证）；systemui 为系统应用，隐藏 API 无限制。
+- **自愈式重打**：灭屏/旋转会重建窗口 surface、layer 身份随之更换，旧 handle
+  上的标志作废。`RingState.onCutoutFrame`（每次挖孔绘制触发）驱动
+  `RingWindowController.syncScreenshotExclusion()` 按「layer 身份 + 开关值」
+  去重，身份变化即补打，未变化的帧只花两次反射字段读取。
+- 三层机制并存，全部受同一开关控制：setSkipScreenshot（主效）+ FLAG_SECURE
+  （非特权采集兜底）+ captureDisplay Hook（AOSP 管线 ROM 兜底）。
+- 配置链路与其他键一致：PrefsStore → ConfigProvider → HookPrefs，热生效
+  （CONFIG_CHANGED 广播）；窗口 flags 类同步走主线程 `updateViewLayout`。
+
+**验证状态**：真机验收通过（2026-10-03）：截图无环、开关热生效、屏幕显示不受
+影响、SystemUI 稳定运行。录屏排除是该 API 的设计语义，未单独复验。换机型/换
+ROM 时先用 17.1 的方法确认真实截图引擎（com.miui.screenshot 还是 SystemUI
+管线），三层机制按需取舍。
+
+计划文档：`docs/superpowers/plans/2026-10-03-hide-ring-on-screenshot.md`
+
+---
+
 ## 附录 A：关键类索引（逆向实证）
 
 **宿主 APK（com.android.systemui，17.03.260226.r）**
