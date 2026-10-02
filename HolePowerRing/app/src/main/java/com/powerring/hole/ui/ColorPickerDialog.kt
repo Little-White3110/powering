@@ -94,7 +94,7 @@ fun ColorPickerDialog(editing: ColorEditing?, onDismiss: () -> Unit) {
             text = if (hexInvalid) {
                 "长度只能是 3 / 6 / 8 位"
             } else {
-                "支持 RGB、RRGGBB、AARRGGBB；前两位是透明度，设为 00 时环会看不见"
+                "支持 RGB、RRGGBB、AARRGGBB；前两位是透明度（00 为全透明）"
             },
             modifier = Modifier.fillMaxWidth(),
             fontSize = MiuixTheme.textStyles.body2.fontSize,

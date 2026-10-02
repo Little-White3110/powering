@@ -43,6 +43,13 @@ class CustomColorsTest {
     }
 
     @Test
+    fun decodeDropsFullyTransparentColors() {
+        // alpha=00 画出来是看不见的环，与「未设置」无异，解码时直接丢段
+        val raw = "1-20:00FFD700,21-40:FFFFD700"
+        assertEquals(listOf(ColorRange(21, 40, 0xFFFFD700.toInt())), CustomColors.decodeRanges(raw))
+    }
+
+    @Test
     fun colorForLevelReturnsFirstMatchInListOrder() {
         val ranges = listOf(ColorRange(1, 50, 0xFFFFD700.toInt()), ColorRange(10, 20, 0xFF277AF7.toInt()))
         assertEquals(0xFFFFD700.toInt(), CustomColors.colorForLevel(ranges, 15))

@@ -249,8 +249,13 @@ object RingRenderer {
         }
     }
 
-    /** 0 = 未设置，取回退色。 */
-    private fun Int.orElse(fallback: Int): Int = if (this == 0) fallback else this
+    /**
+     * 0（未设置）或全透明（alpha=00）都取回退色。
+     * 全透明按未设置处理：色盘初值、十六进制输入都可能带出 alpha=0 的颜色，
+     * 若照单画出来环会整个消失，比「没变色」更让人困惑。
+     */
+    private fun Int.orElse(fallback: Int): Int =
+        if (this == 0 || this ushr 24 == 0) fallback else this
 
     /** 按比例缩放颜色透明度，用于沉浸收缩的淡出 */
     private fun scaleAlpha(color: Int, factor: Float): Int {

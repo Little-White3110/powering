@@ -405,7 +405,9 @@ private fun AppearanceTabContent(
                                     enabled = config.ringEnabled,
                                     onClick = editColor(
                                         label = "${row.title} 环颜色",
-                                        argb = current,
+                                        // 未设置时不能把 0 当色盘初值：0 是全透明黑，ColorPicker 会沿用
+                                        // alpha=0，确认下来仍是 0，等于把「未设置」又写回「未设置」
+                                        argb = if (current == 0) MiuixPalette.PRIMARY_DARK else current,
                                         onResult = { argb ->
                                             PrefsStore.setInt(ctx, row.key, argb)
                                             val next = row.set(config.stateColors, argb)
@@ -736,7 +738,6 @@ private fun RangeColorRow(
             Button(
                 onClick = onDelete,
                 enabled = enabled,
-                modifier = Modifier.height(32.dp),
             ) {
                 Text(text = "删除")
             }

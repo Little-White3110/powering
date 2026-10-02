@@ -53,7 +53,8 @@ object CustomColors {
                 val start = segment.substring(0, dash).trim().toInt()
                 val end = segment.substring(dash + 1, colon).trim().toInt()
                 val color = segment.substring(colon + 1).trim().toLong(16).toInt()
-                if (start > end || start < 0 || end > 100 || color == 0) continue
+                // alpha=00（含全 0）一律丢弃：画出来是看不见的环，与「未设置」无异
+                if (start > end || start < 0 || end > 100 || color ushr 24 == 0) continue
                 out.add(ColorRange(start, end, color))
                 if (out.size == MAX_RANGES) break
             } catch (t: Throwable) {
