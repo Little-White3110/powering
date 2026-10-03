@@ -166,10 +166,6 @@ object RingState {
     @Volatile
     private var statusBarCollapsed: Boolean = false
 
-    /** 最近一次上报的面板（通知栏/控制中心）拉起进度，0f 收起 / 1f 完全展开 */
-    @Volatile
-    private var shadeCollapseFraction: Float = 0f
-
     /** 只读快照：沉浸收起探针据此做「值未变则不驱动」，自愈复位后仍能再次驱动。 */
     val statusBarCollapsedNow: Boolean get() = statusBarCollapsed
 
@@ -216,7 +212,7 @@ object RingState {
     private val COLLAPSE_DURATION_MS = 300L
 
     /**
-     * 控制中心 / 通知面板是否展开（由 ShadeProbeHook 驱动）。
+     * 控制中心 / 通知面板是否展开（由 ShadeCollapseHook 驱动）。
      * 展开时环收起并把原生电池图标交还系统，见 [setShadeExpanded]。
      */
     @Volatile
@@ -229,7 +225,7 @@ object RingState {
      * 控制中心（HyperOS 右侧 QS 面板）是否正在显示。
      *
      * 与 [shadeExpanded]（通知中心）是两条独立输入：HyperOS 把两块面板拆成了
-     * 两个控制器，信号源也不同。由 hook/ControlCenterProbeHook 驱动。
+     * 两个控制器，信号源也不同。两路都由 hook/ShadeCollapseHook 驱动。
      */
     @Volatile
     private var controlCenterShowing: Boolean = false
@@ -411,14 +407,10 @@ object RingState {
     @Volatile
     private var lastConfigSig: String = ""
 
-    /** 上一帧的「下拉面板收起」开关值，用于检出热翻转（见 onShadeCollapseToggled） */
-    @Volatile
-    private var lastCollapseOnShade: Boolean = false
-
     private fun RingConfig.signature() =
         "$ringEnabled|$hideOnScreenshot|$strokeWidthDp|$gapDp|$offsetXDp|$offsetYDp|$scale|" +
             "$colorMode|$customColor|" +
-            "$collapseOnImmersive|$collapseOnIsland|$collapseOnShade|" +
+            "$collapseOnImmersive|$collapseOnIsland|" +
             "${stateColors.normal},${stateColors.low},${stateColors.powerSave}," +
             "${stateColors.performance},${stateColors.charging}|" +
             CustomColors.encodeRanges(levelRanges) +
@@ -846,7 +838,7 @@ object RingState {
     }
 
     /**
-     * 控制中心 / 通知面板展开状态（由 ShadeProbeHook 驱动）。
+     * 控制中心 / 通知面板展开状态（由 ShadeCollapseHook 驱动）。
      *
      * 展开时：环收起（它层带比面板高，不收起来会压在控制中心上），同时把状态栏
      * 原生电池图标交还系统，让控制中心里显示正常的电量效果；面板收起后自动恢复。
@@ -866,7 +858,7 @@ object RingState {
     }
 
     /**
-     * 控制中心（右侧 QS 面板）显示状态（由 ControlCenterProbeHook 驱动）。
+     * 控制中心（右侧 QS 面板）显示状态（由 ShadeCollapseHook 驱动）。
      *
      * 与 [setShadeExpanded] 完全同构：面板展开时环收起并把状态栏原生电池图标
      * 交还系统，面板收起后自动恢复；是否生效由 [RingConfig.hideInControlCenter] 控制。
@@ -1040,8 +1032,8 @@ object RingState {
     private fun inSettleWindow(): Boolean = SystemClock.uptimeMillis() < settleUntilMs
 
     /**
-     * 三条收起通路合并成一个目标值：沉浸收起、灵动岛显示、控制中心展开，
-     * 任一命中即收缩。三个开关互不影响，各自控制自己的场景。
+     * 五条收起通路合并成一个目标值：沉浸收起、灵动岛显示、通知中心展开、
+     * 控制中心展开、锁屏隐藏，任一命中即收缩。各开关互不影响，各自控制自己的场景。
      */
     private fun collapseTarget(): Float {
         val c = config
@@ -1054,37 +1046,7 @@ object RingState {
         val byIsland = islandShowing && c.collapseOnIsland
         val byShade = shadeExpanded && c.hideInShade
         val byControlCenter = controlCenterShowing && c.hideInControlCenter
-        val byShadeCollapse = shadeCollapseFraction > 0f && c.collapseOnShade
-        return if (byImmersive || byIsland || byShade || byControlCenter || byLockScreen || byShadeCollapse) 1f else 0f
-    }
-
-    /**
-     * 面板（通知栏/控制中心）展开状态，0f 收起 / 1f 展开。
-     * 由 ShadeCollapseHook 在 SystemUI 主线程调用。
-     */
-    fun setShadeCollapse(fraction: Float) {
-        val clamped = fraction.coerceIn(0f, 1f)
-        if (!RingCollapseLogic.shouldEmit(shadeCollapseFraction, clamped)) return
-        shadeCollapseFraction = clamped
-        val target = collapseTarget()
-        ModuleLog.i("面板收起状态: fraction=$clamped 收起目标=$target")
-        animateCollapseTo(target)
-    }
-
-    /**
-     * 「下拉面板收起」开关热翻转后的清理（见 onShadeCollapseToggled）。
-     * 关闭方向：丢弃开关关闭期间无门控保护留下的残留 fraction；
-     * 开启方向：让驱动侧清掉同值去重缓存并按系统当前展开态补一次真实同步。
-     */
-    private fun resetShadeCollapseForToggle() {
-        shadeCollapseFraction = 0f
-        if (config.collapseOnShade) {
-            try {
-                onShadeCollapseToggled?.invoke()
-            } catch (t: Throwable) {
-                ModuleLog.e("下拉收起开关回调异常", t)
-            }
-        }
+        return if (byImmersive || byIsland || byShade || byControlCenter || byLockScreen) 1f else 0f
     }
 
     /** 「取消旧动画→立即到位或平滑过渡」。 */
@@ -1095,8 +1057,7 @@ object RingState {
         // （v1.2.0 修正：原先漏了 hideInControlCenter，只开「控制中心里隐藏」时
         //  会跳过动画、硬切上/下场，就是用户说的「控制中心太突兀」）
         val noCollapseFeature = !config.collapseOnImmersive && !config.collapseOnIsland &&
-            !config.hideInShade && !config.hideInControlCenter && !config.hideRingOnLockScreen &&
-            !config.collapseOnShade
+            !config.hideInShade && !config.hideInControlCenter && !config.hideRingOnLockScreen
         if (noCollapseFeature || kotlin.math.abs(target - start) < 0.01f) {
             val changed = kotlin.math.abs(target - start) >= 0.01f
             collapseProgress = target
@@ -1139,12 +1100,6 @@ object RingState {
     var onCutoutFrame: (() -> Unit)? = null
 
     /**
-     * 「下拉面板收起」开关翻转的回调（主线程，配置签名分支内触发）。
-     */
-    @Volatile
-    var onShadeCollapseToggled: (() -> Unit)? = null
-
-    /**
      * 屏幕方向变化回调。与 [onCutoutResolved] 同一模式：由 SystemUiHooks 接到
      * `BatteryHideHook.refreshAll()`，data 层不直接依赖 hook 层。
      */
@@ -1154,10 +1109,10 @@ object RingState {
     /**
      * 「让各收起探针立刻回读一次自己的实时信号」的请求。
      *
-     * 由 SystemUiHooks 接到三个探针的 `reconcile()`。用在「屏幕点亮 / 解锁完成」
-     * 这类稳定时刻：此刻不可能真有面板展开、也不可能真在沉浸模式里，让探针把
-     * 自己记录的值与系统实时值重新对齐一次，就能把锁屏 / 解锁过渡期间残留的
-     * 假值放掉（[resetCollapseInputs] 是强制清零，这里是**按实时值对齐**，
+     * 由 SystemUiHooks 接到能实时回读系统值的探针（沉浸、灵动岛）的 `reconcile()`。
+     * 用在「屏幕点亮 / 解锁完成」这类稳定时刻：此刻不可能真有面板展开、也不可能真在
+     * 沉浸模式里，让探针把自己记录的值与系统实时值重新对齐一次，就能把锁屏 / 解锁过渡
+     * 期间残留的假值放掉（[resetCollapseInputs] 是强制清零，这里是**按实时值对齐**，
      * 因此不会误伤「真的展开了」的场景）。
      */
     @Volatile
@@ -1257,10 +1212,6 @@ object RingState {
         val sig = c.signature()
         if (sig != lastConfigSig) {
             lastConfigSig = sig
-            if (c.collapseOnShade != lastCollapseOnShade) {
-                lastCollapseOnShade = c.collapseOnShade
-                resetShadeCollapseForToggle()
-            }
             animateCollapseTo(collapseTarget())
             applyIslandColorFreeze()
             invalidateAll()

@@ -52,10 +52,6 @@ class ConfigProvider : ContentProvider() {
             prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnImmersive)
         RingConfig.KEY_COLLAPSE_ON_ISLAND ->
             prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnIsland)
-        RingConfig.KEY_COLLAPSE_ON_ISLAND ->
-            prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnIsland)
-        RingConfig.KEY_COLLAPSE_ON_SHADE ->
-            prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnShade)
         RingConfig.KEY_HIDE_ON_SCREENSHOT ->
             prefs.getBoolean(key, RingConfig.DEFAULT.hideOnScreenshot)
         RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE ->
@@ -178,7 +174,6 @@ class ConfigProvider : ContentProvider() {
             RingConfig.KEY_HIDE_BATTERY,
             RingConfig.KEY_COLLAPSE_ON_IMMERSIVE,
             RingConfig.KEY_COLLAPSE_ON_ISLAND,
-            RingConfig.KEY_COLLAPSE_ON_SHADE,
             RingConfig.KEY_HIDE_ON_SCREENSHOT,
             RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE,
             RingConfig.KEY_STROKE_WIDTH,

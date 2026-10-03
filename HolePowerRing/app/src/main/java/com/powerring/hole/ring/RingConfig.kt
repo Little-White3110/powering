@@ -16,13 +16,7 @@ data class RingConfig(
     /** 灵动岛（超级岛）显示时，圆环像全屏沉浸时一样向内收缩并淡出 */
     val collapseOnIsland: Boolean = false,
     /**
-     * 下拉通知栏/控制中心时，圆环向内收缩并淡出（面板收起后弹回）。
-     * 默认关闭：环窗口（层带 231000）压在面板（171000）之上，
-     * 开启后面板展开期间环不可见，指关节截图会同时不含环。
-     */
-    val collapseOnShade: Boolean = false,
-    /**
-     * 截图时不出现在画面里（窗口层 FLAG_SECURE）。
+     * 截图时不出现在画面里（SF 层采集排除，见可行性分析报告 §17）。
      * 同一规则使录屏/投屏画面也不含环；环在物理屏幕上始终正常显示。
      */
     val hideOnScreenshot: Boolean = true,
@@ -249,8 +243,7 @@ data class RingConfig(
         const val KEY_HIDE_BATTERY = "hide_battery"
         const val KEY_COLLAPSE_ON_IMMERSIVE = "collapse_on_immersive"
         const val KEY_COLLAPSE_ON_ISLAND = "collapse_on_island"
-    const val KEY_COLLAPSE_ON_SHADE = "collapse_on_shade"
-    const val KEY_HIDE_ON_SCREENSHOT = "hide_on_screenshot"
+        const val KEY_HIDE_ON_SCREENSHOT = "hide_on_screenshot"
         const val KEY_RESTORE_BATTERY_ON_LANDSCAPE = "restore_battery_on_landscape"
         const val KEY_STROKE_WIDTH = "stroke_width_dp"
         const val KEY_TRACK_OPACITY = "track_opacity_percent"

@@ -29,7 +29,6 @@ object PrefsStore {
             hideBattery = p.getBoolean(RingConfig.KEY_HIDE_BATTERY, true),
             collapseOnImmersive = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_IMMERSIVE, true),
             collapseOnIsland = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_ISLAND, false),
-            collapseOnShade = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_SHADE, false),
             hideOnScreenshot = p.getBoolean(RingConfig.KEY_HIDE_ON_SCREENSHOT, true),
             restoreBatteryOnLandscape = p.getBoolean(
                 RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE, true,
