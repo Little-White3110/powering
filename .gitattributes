@@ -3,3 +3,13 @@
 # 报 bad interpreter / Permission denied（exit 126）。
 gradlew text eol=lf
 gradlew.bat text eol=crlf
+
+# 源码与配置一律在仓库内归一为 LF。
+# PR #1 的作者侧把这批 .kt 以 CRLF 提交进了 blob，与 main 的 LF blob 逐行都不相等，
+# 导致 SystemUiHooks.kt / SettingsScreen.kt 整文件对不齐、假冲突遍布，
+# gradlew.bat 更是 164 行纯行尾改动。补规则防止再发生。
+*.kt text eol=lf
+*.kts text eol=lf
+*.java text eol=lf
+*.xml text eol=lf
+*.pro text eol=lf
