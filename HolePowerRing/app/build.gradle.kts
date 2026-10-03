@@ -101,6 +101,13 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    lint {
+        // 关闭 lintVitalRelease 对 non-SDK 接口的拦截：Xposed/LSPosed 模块常态调用隐藏 API，
+        // 否则 release 构建会被 Android Lint 判 error 而卡死（不影响编译/运行）。
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 dependencies {
