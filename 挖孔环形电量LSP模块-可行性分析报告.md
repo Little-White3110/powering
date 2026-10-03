@@ -623,26 +623,34 @@ scene/flow。`work/find_classes.py`/`dump_class.py`/同-dex `xref.py` 静态候�
 （`NotificationShadeWrapper` 单实例只管通知；控制中心走 `ControlCenterExpandControllerDelegate`），
 必须两路并见。
 
-### 18.3 最终方案（两路布尔求或）
+### 18.3 最终方案（两路布尔，2026-10-04 起并入 PR #1 的按面板开关）
+
+信号源沿用 §18.2 定论的两路，**驱动形态改过一版**：PR #1（v1.3.3）把收起输入拆成了
+`hideInShade`（通知中心）与 `hideInControlCenter`（控制中心）两个独立开关，并让
+`RingState` 用两条布尔状态分别承载（`setShadeExpanded` / `setControlCenterShowing`）。
+合并时的取舍见 §20：信号源保留本机已验证的这两路，状态改走 PR 的布尔 API。
 
 - 通知路：`NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(java.lang.Boolean)`（装箱，
-  `findAndHookMethod` 用 `javaObjectType`）。
-- 控制中心路：`ControlCenterExpandControllerDelegate.onVisibleChanged(boolean)`。
-- 两路各自更新 `notifExpanded` / `ccExpanded`（与开关无关始终跟踪），`combined = if (notifExpanded
-  || ccExpanded) 1f else 0f`，门控 `collapse_on_shade` 开启后才驱动 `RingState.setShadeCollapse`。
-- 行为是**布尔**（展开即收到 1f、收起即弹回 0f），观感非硬闪：走 `animateCollapseTo` 的 260ms
-  `DecelerateInterpolator` 动画。`setShadeCollapse` 的 Float 形参保留，供将来接入可回落的连续
-  进度信号复用同一条通路。
-- 开关热翻转清理：`RingState.onShadeCollapseToggled` → `ShadeCollapseHook.syncFromSystem()`，读
-  两路已跟踪状态补一次驱动（开关打开时若面板已开，环立即收起；否则会把开关后首次真实变化误当
-  重复值跳过 → 环不跟手）。开关关闭时只更新状态、不驱动，避免整场拖拽空重绘。
+  `findAndHookMethod` 用 `javaObjectType`）→ `RingState.setShadeExpanded(Boolean)`。
+- 控制中心路：`ControlCenterExpandControllerDelegate.onVisibleChanged(boolean)`
+  → `RingState.setControlCenterShowing(Boolean)`。
+- **不再有中间的 fraction 合并与开关门控**：两路各自直接驱动自己的状态，是否产生收起由
+  `collapseTarget()` 里各通路 `&& 对应开关` 决定。原先"开关关闭时不驱动、只跟踪状态"
+  的那套 `syncFromSystem()` 热翻转清理随之删除——两个 setter 自身按值去重
+  （`if (x == value) return`），布尔信号每场面板开合只有两次事件，不存在 fraction 逐帧那种空重绘。
+- 行为是**布尔**（展开即收起、收起即弹回），观感非硬闪：走 `animateCollapseTo` 的
+  300ms `DecelerateInterpolator` 动画（v1.2.0 由 260ms 调至 300ms）。
+- 面板展开时同时把状态栏原生电池图标**交还系统**（面板里要显示正常电量），由
+  `RingState.onShadeExpandedChanged` → `BatteryHideHook.refreshAll()`；反向由
+  `shouldForceHideBattery()` 在环没完全收干净前压住图标，避免环与图标同框。
+- 默认值：两个新开关默认**开**（PR 侧原值）。旧的 `collapse_on_shade` 键已删除、不迁移。
 
 **降级方向**：任一路类/方法找不到 → 记日志安静放弃 → 环保持常显（"多显示一个环"远比"该藏却没藏"
 安全）。
 
-**验证状态**：真机验证通过（2026-10-03）——通知面板与控制中心下拉均能让环收缩淡出、收起均弹回。
-换机型/换 ROM 时须先用同样方法确认：① 通知面板的真实展开信号；② 控制中心是否与通知走同一管线
-（本机不同，须分两路）。
+**验证状态**：真机验证通过（2026-10-03 原实现；2026-10-04 合并后复验，通知中心与控制中心
+均正常收起/弹回，电池图标交还同步）。换机型/换 ROM 时须先用同样方法确认：① 通知面板的真实
+展开信号；② 控制中心是否与通知走同一管线（本机不同，须分两路）。
 
 计划文档：`docs/superpowers/plans/2026-10-03-shade-collapse-ring.md`
 
@@ -722,6 +730,98 @@ dumpsys input  → inputConfig=NOT_FOCUSABLE | NOT_TOUCHABLE | TRUSTED_OVERLAY
 - 附带观测（**成因未定**）：环窗口 `alpha=0.799805` 并非本模块设置（代码从不设窗口 alpha）。授信修复后是否回落**未复测**，不作为结论。
 
 **验证状态**：真机验证通过（2026-10-03）——任意位置点按不再被拦。截图隐藏（§17）在 Step A 删掉 `FLAG_SECURE` 后改由纯 SF 层机制承担，同轮点按验收通过，但 §17 的截图六项清单未逐条复跑，下轮回归时补测。
+
+---
+
+## 20. PR #1（v1.3.3）合并与一次回场闪烁（2026-10-04，真机已验证）
+
+外部贡献者 `acxmy` 的 PR #1 把 HolePowerRing v1.3.3 整棵树压回上游。合并过程与结论记在这里，
+避免下次再从代码倒推。
+
+### 20.1 合并范围与取舍
+
+带入：音乐律动（`AudioReactiveService` + `MusicPlayback`，新增 `RECORD_AUDIO` 与
+`microphone` 前台服务）、消息提醒呼吸/闪烁（`NotificationBlinkHook` +
+`RingNotificationListener` 通知使用权主通道 + `NotifStateBridge` 跨进程桥）、点击挖孔显电量
+（`CutoutTapHook`）、锁屏隐藏圆环、百分比数字节点，约 40 个新配置键；人脸解锁
+（`FaceUnlockHook`）由作者第二个 commit 自行删净，树内无残留。
+
+下拉收起按「**留本机已验证的信号源 + 采纳 PR 的按面板 UI 语义**」收敛（细节见 §18.3）：
+删掉 PR 的 `ShadeProbeHook` / `ControlCenterProbeHook`，把 §18.2 验证过的 `ShadeCollapseHook`
+改接 `setShadeExpanded` / `setControlCenterShowing`。
+
+被删的 PR 路线值得记一笔，别当成"随便砍功能"：它的通知面板走
+`ShadeControllerImpl` / `StatusBarStateControllerImpl` / `NotificationPanelViewControllerInjector`，
+并**反射读 `NotificationPanelViewController.mExpandedFraction`** 驱动收起——与 §18.2 里已因
+"收起不回落、有卡在不可见风险"而弃用的 fraction 路线同源，且从未在本机验证过。
+
+### 20.2 作者 rebase 留下的三处硬伤（症状都不报编译错，只会行为不对）
+
+PR 的 rebase（`bd141da`）+ 一个空提交（`9aba940`，署名 `WorkBuddy Bot`，只为重算 GitHub 合并状态）
+在 GitHub 侧显示"可干净快进"，但手工合并的结果有硬伤：
+
+| 位置 | 问题 | 现象 |
+|---|---|---|
+| `SystemUiHooks.install()` | 灵动岛探针的 `catch` **漏了闭括号**，`ScreenshotCaptureHook.install` 与 `ShadeCollapseHook.install` 整段被嵌进该 catch 体内 | 语法合法、构建通过，但截图隐藏与面板收起**只在灵动岛探针抛异常时才安装**，正常路径下两者根本不挂 |
+| `SystemUiHooks` onCreate | `RingWindowController.attach(app)` 连写两次 | 靠 `attached` 幂等标志兜住，属噪声 |
+| `ConfigProvider` / `RingConfig` | `KEY_COLLAPSE_ON_ISLAND` 分支重复；两行常量缩进错乱 | when 重复分支 |
+
+**教训**：外部 PR 显示 `MERGEABLE` 不等于可用。合并后必须 ① 通读入口函数的**括号配对**，
+② 真机确认每个 Hook 的"已挂载"日志出现在**正常启动路径**上，③ 跑 `./gradlew test`。
+
+另外 rebase 丢了 `isShrinkResources = true`（release 包会涨回约 23MB），已恢复。
+
+### 20.3 行尾符造成的假冲突
+
+作者侧把 11 个源文件以 **CRLF blob** 提交，与 main 的 LF blob 逐行都不相等，于是
+`SystemUiHooks.kt`、`SettingsScreen.kt` 整文件对不齐、冲突块覆盖全文，`gradlew.bat` 更是
+164 行纯行尾改动（逐字节内容一致）。原 `.gitattributes` 只约束 `gradlew*`，管不到源码。
+已补 `*.kt/*.kts/*.java/*.xml/*.pro text eol=lf` 并 `git add --renormalize`。
+
+判据：`git ls-files --eol -- <path>`，看 `i/` 是 `i/crlf` 还是 `i/lf`；
+`git merge-tree --write-tree main <pr>` 可以在不动工作区的前提下空跑合并、先拿到真实冲突清单。
+
+### 20.4 回场闪烁：`ValueAnimator.isRunning()` 在 `startDelay` 期间为 false
+
+**症状**：灵动岛收起后环回场时，有概率"闪一下才正常显示"，且一次有一次没有。
+
+**根因**：环回场带 `COLLAPSE_RETURN_DELAY_MS = 220ms` 的刻意延迟（§18.3，为了让原生电池图标先
+淡出、避免环与图标同框）。而 `ValueAnimator.isRunning()` **在整个 startDelay 期间返回 false**
+（要等延迟结束进 `startAnimation()` 才置真）。代码里有两处拿 `isRunning` 当门槛，都在这 220ms
+窗口内误判"没有动画在跑"：
+
+1. 收起看门狗（400ms tick）据此认定"画面与目标不符"，把 `collapseProgress` 从 1.0 **硬刷**成
+   0.0；随后延迟到点的动画第一帧又把进度写回接近 1.0，再重新跑下来 → 肉眼即"突然满显又消失
+   再平滑出现"；
+2. `animateCollapseTo` / `beginSettleWindow` 的 `if (it.isRunning) it.cancel()` 跳过还在延迟里的
+   旧动画，它脱管成为**孤儿动画**，稍后照样回调 `updateListener` 覆盖新动画的进度。
+
+"有概率"取决于看门狗那一 tick 的相位是否落进延迟窗口。
+
+**真机证据**（修复前，每次岛回场都有）：
+
+```
+01:07:54.730  灵动岛显示状态: showing=true  收起目标=1.0
+01:07:55.354  灵动岛显示状态: showing=false 收起目标=0.0   ← 请求回场，此后 220ms 延迟
+01:07:55.545  收起看门狗纠正：progress=1.0 → target=0.0     ← 191ms 后就硬刷，落在延迟窗口内
+```
+
+**改法**：`cancelCollapseAnimator()` 无条件 `cancel()` 并清引用（两个 cancel 点都走它）；
+`onAnimationEnd` 里带身份校验地置空 `collapseAnimator`；看门狗判定改
+`anim.isRunning || anim.isStarted`（`isStarted` 覆盖延迟期，动画结束后为 false）。
+220ms 回场延迟本身保留——那是为了错开电池图标，不是 bug。
+`colorAnimator`（环色过渡）没有 `startDelay`，`isRunning` 判断在那里是准确的，未改动。
+
+**通用铁律**：凡用 `isRunning` 判断"是否有动画在飞"，**只要该动画可能带 `startDelay` 就不成立**，
+必须用 `isStarted || isRunning`，或者干脆无条件 `cancel()`。
+
+**验证状态**：真机验证通过（2026-10-04）——岛回场不再出现该闪烁，看门狗纠正行在该场景不再打出；
+音乐律动、提醒呼吸/闪烁、点击显电量、锁屏隐藏、通知中心/控制中心两路收起、截图隐藏（§17）、
+点按劫持（§19，`inputConfig` 仍带 `TRUSTED_OVERLAY`、层带 231000）同轮回归正常。
+
+**遗留**：PR 新增的约 40 个配置键**没有配套单测**（作者侧 test 目录与 base 相同），
+CI 的 `./gradlew test` 只跑既有测试；`RECORD_AUDIO` + 麦克风前台服务是模块首次申请敏感权限，
+README 与隐私说明尚未同步。
 
 ---
 
