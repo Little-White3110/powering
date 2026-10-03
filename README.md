@@ -1,4 +1,12 @@
-# HolePowerRing（挖孔电量环）
+<p align="center">
+  <img src="./HolePowerRing/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="128" alt="HolePowerRing 应用图标" />
+</p>
+
+<h1 align="center">HolePowerRing（挖孔电量环）</h1>
+
+<p align="center">
+  面向 HyperOS（MIUI）的 LSPosed 模块 · MIT 授权
+</p>
 
 一个面向 **HyperOS（MIUI）** 的 LSPosed 模块：在摄像头挖孔（punch-hole）外圈绘制环形电量，并隐藏状态栏原有电池图标。
 
@@ -21,6 +29,7 @@ powering/
 │   └── xposedstub/         # Xposed API 编译桩（仅 compileOnly，不打入 APK）
 ├── apks/                   # 逆向分析用的目标 APK（HyperOS 系统界面 / 系统界面组件插件）
 ├── docs/                   # 专题文档（发布与 CI、方案计划、验证截图）
+├── LICENSE                 # MIT 许可证（适用于本项目自有源码与文档）
 ├── work/                   # DEX 静态逆向工具脚本（Python）与分析产物
 │   ├── dexlib.py           # DEX 解析基础库
 │   ├── dump_class.py       # 类/方法/字段转储
@@ -94,7 +103,16 @@ git push origin v1.2.3      # → 自动出包 + Release
 - [挖孔环形电量LSP模块-可行性分析报告.md](./挖孔环形电量LSP模块-可行性分析报告.md) — 目标 APK 逆向分析、Hook 点选型、风险与验证计划
 - [docs/release-ci.md](./docs/release-ci.md) — CI 发版流水线、发布密钥配置与本地复现
 - [lsposed-dev-guide.md](./lsposed-dev-guide.md) — LSPosed 开发参考
+- [LICENSE](./LICENSE) — MIT 许可证全文
 
 ## 免责声明
 
 本项目仅供学习与研究。修改 SystemUI 行为存在一定风险（如界面异常），请自行承担使用风险，并保留可通过 LSPosed 禁用模块恢复原状的能力。
+
+## 许可证
+
+[MIT](./LICENSE)。
+
+**适用范围**：本仓库中本项目自有的内容——`HolePowerRing/` 源码、`work/` 分析脚本、`docs/` 与各类 Markdown 文档。
+
+**不适用**：`apks/` 目录下的小米 HyperOS 系统界面与系统界面组件插件 APK 为第三方专有软件，版权归小米所有，仅用于本地逆向分析，**不受 MIT 授权**，请勿再分发。`lsposed-dev-guide.md` 等外部资料同样遵循其原始来源的许可。
