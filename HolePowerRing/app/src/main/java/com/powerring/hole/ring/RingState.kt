@@ -468,7 +468,11 @@ object RingState {
                         syncLockScreenState()
                     }
                     val anim = collapseAnimator
-                    val animating = anim != null && anim.isRunning
+                    // isRunning 在 startDelay 期间恒为 false，而回场动画有
+                    // COLLAPSE_RETURN_DELAY_MS 的延迟；只看 isRunning 就会在延迟窗口里
+                    // 误判「没在动画」，把进度硬刷到目标值，随后延迟到点的动画第一帧又
+                    // 把进度写回去 —— 肉眼就是「闪一下才正常显示」。isStarted 覆盖延迟期。
+                    val animating = anim != null && (anim.isRunning || anim.isStarted)
                     val target = collapseTarget()
                     if (!animating && kotlin.math.abs(target - collapseProgress) > 0.01f) {
                         ModuleLog.i(
@@ -1014,8 +1018,7 @@ object RingState {
         islandShowing = false
         shadeExpanded = false
         controlCenterShowing = false
-        collapseAnimator?.let { if (it.isRunning) it.cancel() }
-        collapseAnimator = null
+        cancelCollapseAnimator()
         // 用目标值定进度：常规解锁 → 0（环立刻回来）；万一仍处锁屏隐藏 → 1（保持收起）
         collapseProgress = collapseTarget()
         ModuleLog.i("收起沉降窗口开始: ${durationMs}ms（其间忽略全部收起信号，环保持完整显示）")
@@ -1052,7 +1055,7 @@ object RingState {
     /** 「取消旧动画→立即到位或平滑过渡」。 */
     private fun animateCollapseTo(target: Float) {
         val start = collapseProgress
-        collapseAnimator?.let { if (it.isRunning) it.cancel() }
+        cancelCollapseAnimator()
         // 全部收起开关都关掉时压根不需要播动画，直接到位
         // （v1.2.0 修正：原先漏了 hideInControlCenter，只开「控制中心里隐藏」时
         //  会跳过动画、硬切上/下场，就是用户说的「控制中心太突兀」）
@@ -1079,12 +1082,28 @@ object RingState {
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
+                    if (animation === collapseAnimator) collapseAnimator = null
                     if (collapseProgress >= 0.985f || collapseProgress <= 0.015f) {
                         notifyCollapseSettled()
                     }
                 }
             })
         }.also { it.start() }
+    }
+
+    /**
+     * 干掉在飞的收起/回场动画并丢掉引用。
+     *
+     * 必须无条件 `cancel()`，**不能用 `isRunning` 当门槛**：回场动画带
+     * [COLLAPSE_RETURN_DELAY_MS] 的 `startDelay`，而 `ValueAnimator.isRunning()`
+     * 在整个延迟期都是 false（要等延迟结束进 `startAnimation()` 才置真）。按
+     * isRunning 判断就会把还在延迟里的动画漏掉，于是它变成孤儿：稍后延迟到点照样
+     * 回调 updateListener，把 `collapseProgress` 写回它自己的旧值区间，盖掉新动画
+     * 的结果。2026-10-04 用户反馈「岛收起后环回场会闪一下才正常显示」即此。
+     */
+    private fun cancelCollapseAnimator() {
+        collapseAnimator?.let { runCatching { it.cancel() } }
+        collapseAnimator = null
     }
 
     /** 挖孔几何首次解析成功的回调（由隐藏 Hook 注册，用于时序补偿）。 */
