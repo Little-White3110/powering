@@ -44,6 +44,8 @@ versionCode = major × 1000000 + minor × 1000 + patch
 
 模块的 Release 必须签名才能安装（APK 默认不走 debug 签名）。密钥**不入库**，通过 GitHub Secrets 传给 CI。
 
+> **当前仓库状态（2026-10-04）**：4 个 `RELEASE_*` Secrets **一个都还没配**，所以 v0.1.0 与 v1.1.0 的产物都是 CI 回落出来的 **debug 签名包**（构建日志有 `::warning::未配置 RELEASE_KEYSTORE_BASE64` 这一行）。两者签名一致、可互相覆盖升级；**但一旦改用正式密钥，装过 debug 包的用户必须卸载重装**。要转正式签名前先想清楚这一点。
+
 ### 1. 本地生成一个 keystore
 
 ```bash
@@ -113,7 +115,11 @@ tag 形如 `v1.2` 或 `v1.2.3.4` 都会被拒绝（`::error::版本号格式非�
 **打包很慢**
 CI 用了 `gradle/actions/setup-gradle` 缓存依赖，首次构建会下载 Gradle 9.6.1、AGP 9.3.1 与 Android SDK 37，耐心等待。
 
+**`lintVitalRelease` 报 `BlockedPrivateApi`：Reflective access to ... is forbidden when targeting API 37 and above**
+本模块的本质就是在 SystemUI 进程内反射 framework / MIUI 私有成员，而 targetSdk 37 起 lint 把这类访问判为致命错误并卡住 release 构建（v1.1.0 首次发版踩到，报错点是 `RingWindowController` 取 `ViewRootImpl.mSurfaceControl`）。已在 `app/build.gradle.kts` 用 `lint { disable += "BlockedPrivateApi" }` 关闭这一项检查并写明理由——隐藏 API 名单按调用方 targetSdk 生效，SystemUI 属平台侧进程不受此限，真机已实证反射可用（可行性分析报告 §17、§19）。**不要**改成 `abortOnError = false`，那会连带放过所有 lint 致命项。
+
 **`Warning: Failed to find package 'tools'`，job 在「准备 Android SDK」挂掉**
+
 `android-actions/setup-android@v3` 的 `packages` 默认值是 `tools platform-tools`，但那个早于 cmdline-tools 的 `tools` 包已被 Google 下架，`sdkmanager tools` 返回 exit code 1 就把 job 打断。工作流里已显式改成 `packages: 'platform-tools'`；Android SDK 37 与 build-tools 交给 AGP 在许可已接受的前提下自动补齐。升级该 action 时留意这个默认值。
 
 **`./gradlew: Permission denied`，exit code 126**

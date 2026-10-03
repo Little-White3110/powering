@@ -34,6 +34,8 @@ cd HolePowerRing
 
 工具链：JDK 17+（Gradle 可通过 foojay 自动下载 JDK 21）、Android SDK 37、`minSdk = 34`。Windows 下用 `gradlew.bat`。
 
+> **`assembleDebug` 通过 ≠ 能发版**：`lintVitalRelease` 只在 release 构建里跑。发版前先本地 `./gradlew assembleRelease` 复现完整门禁（2026-10-04 发 v1.1.0 时，main 已因该门禁坏了一天多没人发现）。`app/build.gradle.kts` 里 `disable += "BlockedPrivateApi"` 是本模块的本质前提，不要退回 `abortOnError = false`。
+
 ### 发布（GitHub Actions）
 
 `.github/workflows/release.yml`：**推送 `vX.Y.Z` 形式的 tag 即自动发版**——跑 `./gradlew test`（纯数据层 JVM 单测）+ `assembleRelease`，创建 GitHub Release 并挂上 APK 与 SHA256SUMS。手动触发发版、PR 只校验的分支行为，以及密钥配置，见 [docs/release-ci.md](docs/release-ci.md)。

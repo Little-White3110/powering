@@ -62,6 +62,15 @@ android {
         versionName = appVersionName
     }
 
+    lint {
+        // 模块的本质就是在 SystemUI 进程内反射 framework / MIUI 的私有成员，
+        // 而 targetSdk 37 起 lint 会把这类访问判为 BlockedPrivateApi 致命错误，
+        // 直接卡住 lintVitalRelease（2026-10-04 发 v1.1.0 时首次踩到）。
+        // 隐藏 API 名单按调用方的 targetSdk 生效，SystemUI 是平台侧进程、
+        // 不受这个限制，真机已实证这些反射可用（可行性分析报告 §17、§19）。
+        disable += "BlockedPrivateApi"
+    }
+
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {
