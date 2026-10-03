@@ -41,7 +41,7 @@ object RingState {
     @Volatile var screenOn: Boolean = true
         private set
 
-    // ---- 收起通路（沉浸收起 / 灵动岛显示，共用一条动画通道） ----
+    // ---- 收起通路（沉浸收起 / 灵动岛显示 / 面板拉起，共用一条动画通道） ----
 
     /** 收起进度：0f 完整显示，1f 完全收缩不可见（渲染端按此收缩半径并衰减透明度） */
     @Volatile
@@ -51,6 +51,10 @@ object RingState {
     /** 最近一次系统上报的状态栏收起状态（沉浸模式） */
     @Volatile
     private var statusBarCollapsed: Boolean = false
+
+    /** 最近一次上报的面板（通知栏/控制中心）拉起进度，0f 收起 / 1f 完全展开 */
+    @Volatile
+    private var shadeCollapseFraction: Float = 0f
 
     /** 最近一次上报的灵动岛显示状态（由 IslandVisibilityHook 驱动，渲染侧只读） */
     @Volatile
@@ -130,10 +134,14 @@ object RingState {
     @Volatile
     private var lastConfigSig: String = ""
 
+    /** 上一帧的「下拉面板收起」开关值，用于检出热翻转（见 [onShadeCollapseToggled]） */
+    @Volatile
+    private var lastCollapseOnShade: Boolean = false
+
     private fun RingConfig.signature() =
         "$ringEnabled|$hideOnScreenshot|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
             "$colorMode|$customColor|" +
-            "$collapseOnImmersive|$collapseOnIsland|" +
+            "$collapseOnImmersive|$collapseOnIsland|$collapseOnShade|" +
             "${stateColors.normal},${stateColors.low},${stateColors.powerSave}," +
             "${stateColors.performance},${stateColors.charging}|" +
             CustomColors.encodeRanges(levelRanges)
@@ -312,6 +320,45 @@ object RingState {
     }
 
     /**
+     * 面板（通知栏/控制中心）展开状态，0f 收起 / 1f 展开 —— 当前只会是这两个值。
+     *
+     * 由 ShadeCollapseHook 在 SystemUI 主线程调用，取两路布尔"求或"后的值：通知面板走
+     * `NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(Boolean)`，控制中心走
+     * `ControlCenterExpandControllerDelegate.onVisibleChanged(Z)`（真机取证 2026-10-03：
+     * 前者名字带 "Qs" 却根本不覆盖控制中心，故必须两路并见）。所以本通路是"面板展开即
+     * 收起、收起即弹回"，不是跟随手指进度 —— 观感仍不是硬闪：0f↔1f 跳变走
+     * [animateCollapseTo] 的 260ms `DecelerateInterpolator` 动画。
+     *
+     * fraction 形参保留：将来确认到可回落的连续进度信号后复用同一条通路，无需再改签名。
+     * 变化小于阈值时忽略（[RingCollapseLogic.shouldEmit]），省掉重复驱动。
+     */
+    fun setShadeCollapse(fraction: Float) {
+        val clamped = fraction.coerceIn(0f, 1f)
+        if (!RingCollapseLogic.shouldEmit(shadeCollapseFraction, clamped)) return
+        shadeCollapseFraction = clamped
+        val target = collapseTarget()
+        ModuleLog.i("面板收起状态: fraction=$clamped 收起目标=$target")
+        animateCollapseTo(target)
+    }
+
+    /**
+     * 「下拉面板收起」开关热翻转后的清理（见 [onShadeCollapseToggled]）。
+     * 关闭方向：丢弃开关关闭期间无门控保护留下的残留 fraction；
+     * 开启方向：让驱动侧清掉同值去重缓存并按系统当前展开态补一次真实同步。
+     * 随后的 [animateCollapseTo] 由调用方统一发起。
+     */
+    private fun resetShadeCollapseForToggle() {
+        shadeCollapseFraction = 0f
+        if (config.collapseOnShade) {
+            try {
+                onShadeCollapseToggled?.invoke()
+            } catch (t: Throwable) {
+                ModuleLog.e("下拉收起开关回调异常", t)
+            }
+        }
+    }
+
+    /**
      * 岛色冻结的进出场。
      *
      * 进场：cancel 正在跑的跟随动画后**立即定格**为守卫判定的颜色（近黑→纯白，
@@ -351,20 +398,23 @@ object RingState {
         }
     }
 
-    /** 两条收起通路合并成一个目标值：沉浸收起、灵动岛显示，任一命中即收缩。 */
-    private fun collapseTarget(): Float {
-        val c = config
-        val byImmersive = statusBarCollapsed && c.collapseOnImmersive
-        val byIsland = islandShowing && c.collapseOnIsland
-        return if (byImmersive || byIsland) 1f else 0f
-    }
+    /** 三条收起通路合并成一个目标值：沉浸收起、灵动岛显示、面板拉起，取最强者。 */
+    private fun collapseTarget(): Float = RingCollapseLogic.target(
+        statusBarCollapsed = statusBarCollapsed,
+        collapseOnImmersive = config.collapseOnImmersive,
+        islandShowing = islandShowing,
+        collapseOnIsland = config.collapseOnIsland,
+        shadeFraction = shadeCollapseFraction,
+        collapseOnShade = config.collapseOnShade,
+    )
 
     /** 「取消旧动画→立即到位或平滑过渡」。 */
     private fun animateCollapseTo(target: Float) {
         val start = collapseProgress
         collapseAnimator?.let { if (it.isRunning) it.cancel() }
-        // 两个收起开关都关掉时压根不需要播动画，直接到位
-        val noCollapseFeature = !config.collapseOnImmersive && !config.collapseOnIsland
+        // 三个收起开关都关掉时压根不需要播动画，直接到位
+        val noCollapseFeature = !config.collapseOnImmersive && !config.collapseOnIsland &&
+            !config.collapseOnShade
         if (noCollapseFeature || kotlin.math.abs(target - start) < 0.01f) {
             collapseProgress = target
             invalidateAll()
@@ -399,6 +449,19 @@ object RingState {
      */
     @Volatile
     var onCutoutFrame: (() -> Unit)? = null
+
+    /**
+     * 「下拉面板收起」开关翻转的回调（主线程，配置签名分支内触发）。
+     *
+     * 为什么需要：该通路的驱动侧（ShadeCollapseHook）在开关关闭时只做取证、
+     * 不写 fraction，于是留下两处残留 —— 关闭期间面板展开着切进来会把系统
+     * 当前的展开态当成 fraction=1f 冻在状态里（开关一开环就无端收起，
+     * 且面板随后收起时不再驱动、环收不回）；驱动侧自己的同值去重缓存也会
+     * 停在旧值，让开关后第一次真实变化被当成重复值跳过（环不跟手）。
+     * 因此翻转时同时归零本地 fraction 并通知驱动侧清缓存、重新同步真实状态。
+     */
+    @Volatile
+    var onShadeCollapseToggled: (() -> Unit)? = null
 
     /**
      * 屏幕方向变化回调。与 [onCutoutResolved] 同一模式：由 SystemUiHooks 接到
@@ -474,6 +537,10 @@ object RingState {
         val sig = c.signature()
         if (sig != lastConfigSig) {
             lastConfigSig = sig
+            if (c.collapseOnShade != lastCollapseOnShade) {
+                lastCollapseOnShade = c.collapseOnShade
+                resetShadeCollapseForToggle()
+            }
             animateCollapseTo(collapseTarget())
             applyIslandColorFreeze()
             try {

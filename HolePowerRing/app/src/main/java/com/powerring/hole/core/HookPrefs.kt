@@ -144,6 +144,7 @@ object HookPrefs {
                 values[RingConfig.KEY_COLLAPSE_ON_IMMERSIVE], d.collapseOnImmersive,
             ),
             collapseOnIsland = toBool(values[RingConfig.KEY_COLLAPSE_ON_ISLAND], d.collapseOnIsland),
+            collapseOnShade = toBool(values[RingConfig.KEY_COLLAPSE_ON_SHADE], d.collapseOnShade),
             hideOnScreenshot = toBool(
                 values[RingConfig.KEY_HIDE_ON_SCREENSHOT], d.hideOnScreenshot,
             ),

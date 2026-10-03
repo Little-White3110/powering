@@ -587,6 +587,62 @@ ROM 时先用 17.1 的方法确认真实截图引擎（com.miui.screenshot 还�
 
 ---
 
+## 18. 下拉通知栏/控制中心时收起电量环（2026-10-03，真机已验证）
+
+需求：下拉通知面板或控制中心时，圆环像沉浸/有岛那样向内收缩并淡出，面板收起后弹回。设置键
+`collapse_on_shade`（默认关，热生效），经 `RingCollapseLogic.target` 并入既有 `collapseProgress`
+单通道（三通路取最强者）。
+
+### 18.1 为什么必须主动隐藏（层带实测）
+
+环窗口 `type=2006` / 层带 231000，`NotificationShade` 窗口 `ty=NOTIFICATION_SHADE` /
+`mBaseLayer=171000`（`dumpsys window windows` 复核）。环压在面板之上，下拉时环会浮在通知/
+控制中心内容表面。环窗口带 `FLAG_NOT_TOUCHABLE`，不抢触摸、不影响下拉手势，故这是纯视觉问题，
+隐藏动作由模块自己驱动即可。
+
+### 18.2 信号取证：三轮真机迭代定论（关键）
+
+本机（25102RKBEC / 系统界面 17.03.260226.r）通知面板走**传统 MIUI View 管线**，不是 AOSP
+scene/flow。`work/find_classes.py`/`dump_class.py`/同-dex `xref.py` 静态候选 + logcat 实测：
+
+| 信号点 | 静态预期 | 真机实测 | 结论 |
+|---|---|---|---|
+| `ShadeExpansionStateManager.onPanelExpansionChanged(FZZ)`（classes2） | 中央分发点，带连续 fraction | **挂载成功但整场 0 次触发** | 本机不派发，删除 |
+| `NotificationShadeWrapper.onPanelExpanded(Z)`（classes3） | 通知/控制中心各一实例 | 全程仅单实例触发，**只覆盖通知面板** | 降为取证，删 |
+| `ControlCenterExpandControllerDelegate.onExpansionChanged(F)`（classes3） | 控制中心连续 fraction | 展开时逐帧给 0f→0.96；**收起是否回落 0f 两轮均因日志撞上限未证实** | 有"环卡在不可见"风险，弃用 |
+| `NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(Boolean)`（classes2） | 名称含 "Qs"，疑似 shade/QS 合并超集 | **只覆盖通知面板，下拉控制中心时 0 触发** | ⚠ 名字误导，仅作通知路驱动 |
+| `ControlCenterExpandControllerDelegate.onVisibleChanged(Z)`（classes3） | 显隐布尔 | **展开/收起成对派发**（实测三组开合全 true→false 成对） | ✅ 控制中心唯一可靠信号 |
+
+**教训**：`onShadeOrQsExpanded` 的 "Qs" 在本机是虚的——静态看到调用方读 `qsExpanded` 字段不足以
+证明它对控制中心派发，必须真机下拉控制中心验证。控制中心与通知面板在本机是两套独立管线
+（`NotificationShadeWrapper` 单实例只管通知；控制中心走 `ControlCenterExpandControllerDelegate`），
+必须两路并见。
+
+### 18.3 最终方案（两路布尔求或）
+
+- 通知路：`NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(java.lang.Boolean)`（装箱，
+  `findAndHookMethod` 用 `javaObjectType`）。
+- 控制中心路：`ControlCenterExpandControllerDelegate.onVisibleChanged(boolean)`。
+- 两路各自更新 `notifExpanded` / `ccExpanded`（与开关无关始终跟踪），`combined = if (notifExpanded
+  || ccExpanded) 1f else 0f`，门控 `collapse_on_shade` 开启后才驱动 `RingState.setShadeCollapse`。
+- 行为是**布尔**（展开即收到 1f、收起即弹回 0f），观感非硬闪：走 `animateCollapseTo` 的 260ms
+  `DecelerateInterpolator` 动画。`setShadeCollapse` 的 Float 形参保留，供将来接入可回落的连续
+  进度信号复用同一条通路。
+- 开关热翻转清理：`RingState.onShadeCollapseToggled` → `ShadeCollapseHook.syncFromSystem()`，读
+  两路已跟踪状态补一次驱动（开关打开时若面板已开，环立即收起；否则会把开关后首次真实变化误当
+  重复值跳过 → 环不跟手）。开关关闭时只更新状态、不驱动，避免整场拖拽空重绘。
+
+**降级方向**：任一路类/方法找不到 → 记日志安静放弃 → 环保持常显（"多显示一个环"远比"该藏却没藏"
+安全）。
+
+**验证状态**：真机验证通过（2026-10-03）——通知面板与控制中心下拉均能让环收缩淡出、收起均弹回。
+换机型/换 ROM 时须先用同样方法确认：① 通知面板的真实展开信号；② 控制中心是否与通知走同一管线
+（本机不同，须分两路）。
+
+计划文档：`docs/superpowers/plans/2026-10-03-shade-collapse-ring.md`
+
+---
+
 ## 附录 A：关键类索引（逆向实证）
 
 **宿主 APK（com.android.systemui，17.03.260226.r）**
@@ -607,6 +663,9 @@ ROM 时先用 17.1 的方法确认真实截图引擎（com.miui.screenshot 还�
 | `com.android.systemui.devicenotification.listener.DeviceNotificationListenerImpl` | 充电岛事件源：`startAnimationForChargeNumber`、`onIslandStateChanged(ZZ)`、`chargeIslandShowing`、`removeChargeIslandRunnable` |
 | `com.android.systemui.statusbar.IslandMonitor`（含 Real/Fake/Notification/ControlCenter 四种监听器）、`OnIslandStatusChangedListener` | 灵动岛显隐状态监听 |
 | `com.android.systemui.statusbar.notification.DynamicIslandController` / `DynamicIslandPluginController` / `DynamicIslandPluginHolder` | 灵动岛宿主侧控制 |
+| `com.android.systemui.shade.NotificationShadeWindowControllerImpl` | 下拉收起·通知路信号源：`onShadeOrQsExpanded(java.lang.Boolean)`（实测只覆盖通知面板）|
+| `com.miui.systemui.controlcenter.container.ControlCenterExpandControllerDelegate` | 下拉收起·控制中心路信号源：`onVisibleChanged(boolean)`（成对派发）；`onExpansionChanged(float)` 收起回落未证实、未采用 |
+| `com.android.systemui.shade.ShadeExpansionStateManager`（`onPanelExpansionChanged(FZZ)`）、`com.miui.systemui.shade.NotificationShadeWrapper`（`onPanelExpanded(Z)`） | 首轮候选，真机证伪后已删除（前者 0 触发；后者只覆盖通知面板）|
 | `com.android.systemui.shared.plugins.PluginManagerImpl` / `PluginActionManager.loadPluginComponent` / `PluginInstance.loadPlugin` | 插件加载（拿插件 ClassLoader 的 Hook 点） |
 
 **插件 APK（miui.systemui.plugin，18.2.2.2.0）**

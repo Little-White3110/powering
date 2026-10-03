@@ -18,9 +18,10 @@ import de.robv.android.xposed.XposedHelpers
  * 状态栏视图注入与挖孔覆盖层 onDraw
  * 两套实验载体保留在代码库中但不启用，避免多载体重影。
  *
- * 收起通路有两个信号源，都收敛到 RingState 的同一条 collapseProgress 通道：
- * [ImmersiveProbeHook]（状态栏窗口 shown/hidden）与 [IslandVisibilityHook]
- * （MiuiBatteryMeterView.updateIslandShowing，宿主侧信号）。
+ * 收起通路有三个信号源，都收敛到 RingState 的同一条 collapseProgress 通道：
+ * [ImmersiveProbeHook]（状态栏窗口 shown/hidden）、[IslandVisibilityHook]
+ * （MiuiBatteryMeterView.updateIslandShowing，宿主侧信号）与 [ShadeCollapseHook]
+ * （NotificationShadeWindowControllerImpl.onShadeOrQsExpanded，shade/QS 合并布尔）。
  */
 object SystemUiHooks {
 
@@ -78,6 +79,13 @@ object SystemUiHooks {
             ModuleLog.e("截图采集 Hook 安装异常", t)
         }
 
+        // 面板拉起收起：合并布尔信号驱动 + 控制中心/通知侧 fraction 取证
+        try {
+            ShadeCollapseHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("面板收起信号安装异常", t)
+        }
+
         // Application.onCreate 后拿到 Context：注册电量监听 + 添加环窗口
         XposedHelpers.findAndHookMethod(
             Application::class.java,
@@ -92,6 +100,7 @@ object SystemUiHooks {
                         RingWindowController.attach(app)
                         RingState.onConfigApplied = { RingWindowController.applyScreenshotHide() }
                         RingState.onCutoutFrame = { RingWindowController.syncScreenshotExclusion() }
+                        RingState.onShadeCollapseToggled = { ShadeCollapseHook.syncFromSystem() }
                         ModuleLog.i("SystemUI Application 初始化完成")
                     } catch (t: Throwable) {
                         ModuleLog.e("Application onCreate Hook 异常", t)

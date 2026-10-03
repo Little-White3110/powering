@@ -86,6 +86,7 @@ python xref.py              # 交叉引用分析
   - ⚠️ **该链路在可行性分析报告中的章节尚未补写**（原引用写作"§12"，但 §12 现已被「灵动岛显隐信号与 ANR 事故」占用，见下条）。补写时请用 **§13**，结论目前只暂存在本条。
 - **自定义配色四模式（2026-10-02）**：`color_mode` 四值互斥（0 跟随系统 / 1 固定单色 / 2 按电池状态 5 路 / 3 按电量区间），代码与 14 条 JVM 单测已通过，**真机验收尚未执行**（六项清单见可行性分析报告 §15 末尾）。契约、存储格式与 `use_custom_color` 遗留推导都在 §15。计划：`docs/superpowers/plans/2026-10-02-ring-custom-color-modes.md`
 - **截图时隐藏电量环：已确认（2026-10-03，真机验证通过）**。设置键 `hide_on_screenshot`（默认开，热生效）。本机真实截图引擎是独立进程 `com.miui.screenshot`（SystemUI 内 AOSP 管线休眠），FLAG_SECURE 会被特权截图绕过（`fl=` 含 SECURE 仍被采到）；主效机制为反射 `Transaction.setSkipScreenshot`（SF 层硬排除，录屏/投屏同样覆盖），灭屏/旋转后由 `RingState.onCutoutFrame` 每帧按 layer 身份自愈。`captureDisplay` Hook 保留给走 AOSP 管线的 ROM。三层机制与迭代证据见可行性分析报告 §17。换机型须先确认真实截图引擎（报告 §17.1 方法）
+- **下拉通知栏/控制中心收起电量环：已确认（2026-10-03，真机验证通过）**。设置键 `collapse_on_shade`（默认关，热生效），并入 `RingState` 三通路 `collapseProgress`（沉浸/有岛/面板，取最强者）。本机通知面板与控制中心是**两套独立管线**，必须两路布尔求或：通知走 `NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(java.lang.Boolean)`（名字带 "Qs" 却**不覆盖控制中心**），控制中心走 `ControlCenterExpandControllerDelegate.onVisibleChanged(boolean)`（成对派发）。行为是布尔（展开即收、收起即弹回，260ms 动画缓冲），非跟随手指——`onExpansionChanged(float)` 能给 fraction 但收起回落两轮未证实、有卡死风险，弃用。`ShadeExpansionStateManager.onPanelExpansionChanged(FZZ)` 与 `NotificationShadeWrapper.onPanelExpanded(Z)` 真机证伪后删除。换机型须先分别确认通知与控制中心的真实展开信号是否同路。见可行性分析报告 §18
 
 ## 不要做的事
 

@@ -233,6 +233,19 @@ private fun SwitchTabContent(
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SwitchPreference(
+                        checked = config.collapseOnShade,
+                        onCheckedChange = { enabled ->
+                            PrefsStore.setBoolean(
+                                ctx, RingConfig.KEY_COLLAPSE_ON_SHADE, enabled,
+                            )
+                            update(config.copy(collapseOnShade = enabled))
+                        },
+                        title = "下拉面板时隐藏圆环",
+                        summary = "下拉通知栏或控制中心时，圆环向内收缩并淡出，面板收起后弹回；开启期间下拉状态的截屏同样不含圆环",
+                        enabled = config.ringEnabled,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SwitchPreference(
                         checked = config.hideOnScreenshot,
                         onCheckedChange = { enabled ->
                             PrefsStore.setBoolean(
