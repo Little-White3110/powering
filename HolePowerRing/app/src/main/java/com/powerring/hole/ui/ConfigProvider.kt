@@ -9,6 +9,7 @@ import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Bundle
 import com.powerring.hole.core.ModuleLog
+import com.powerring.hole.ring.PercentNodes
 import com.powerring.hole.ring.RingConfig
 
 /**
@@ -51,6 +52,8 @@ class ConfigProvider : ContentProvider() {
             prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnImmersive)
         RingConfig.KEY_COLLAPSE_ON_ISLAND ->
             prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnIsland)
+        RingConfig.KEY_COLLAPSE_ON_ISLAND ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnIsland)
         RingConfig.KEY_COLLAPSE_ON_SHADE ->
             prefs.getBoolean(key, RingConfig.DEFAULT.collapseOnShade)
         RingConfig.KEY_HIDE_ON_SCREENSHOT ->
@@ -59,6 +62,8 @@ class ConfigProvider : ContentProvider() {
             prefs.getBoolean(key, RingConfig.DEFAULT.restoreBatteryOnLandscape)
         RingConfig.KEY_USE_CUSTOM_COLOR -> prefs.getBoolean(key, RingConfig.DEFAULT.useCustomColor)
         RingConfig.KEY_STROKE_WIDTH -> prefs.getFloat(key, RingConfig.DEFAULT.strokeWidthDp)
+        RingConfig.KEY_TRACK_OPACITY -> prefs.getInt(key, RingConfig.DEFAULT.trackOpacityPercent)
+        RingConfig.KEY_GAP_DP -> prefs.getFloat(key, RingConfig.DEFAULT.gapDp)
         RingConfig.KEY_OFFSET_X -> prefs.getFloat(key, RingConfig.DEFAULT.offsetXDp)
         RingConfig.KEY_OFFSET_Y -> prefs.getFloat(key, RingConfig.DEFAULT.offsetYDp)
         RingConfig.KEY_SCALE -> prefs.getFloat(key, RingConfig.DEFAULT.scale)
@@ -70,6 +75,81 @@ class ConfigProvider : ContentProvider() {
         RingConfig.KEY_STATE_COLOR_PERFORMANCE -> prefs.getInt(key, 0)
         RingConfig.KEY_STATE_COLOR_CHARGING -> prefs.getInt(key, 0)
         RingConfig.KEY_LEVEL_RANGES -> prefs.getString(key, "")
+        RingConfig.KEY_BREATHING_ENABLED -> prefs.getBoolean(key, RingConfig.DEFAULT.breathingEnabled)
+        RingConfig.KEY_BREATHING_ON_IDLE -> prefs.getBoolean(key, RingConfig.DEFAULT.breathingOnIdle)
+        RingConfig.KEY_BLINK_ON_NOTIFICATION ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.blinkOnNotification)
+        RingConfig.KEY_BLINK_COLOR_ALERT -> prefs.getInt(key, RingConfig.DEFAULT.blinkColorAlert)
+        RingConfig.KEY_BLINK_COLOR_ALT -> prefs.getInt(key, RingConfig.DEFAULT.blinkColorAlt)
+        RingConfig.KEY_TAP_SHOW_PERCENT -> prefs.getBoolean(key, RingConfig.DEFAULT.tapShowPercent)
+        RingConfig.KEY_TAP_PERCENT_DURATION ->
+            prefs.getInt(key, RingConfig.DEFAULT.tapPercentDurationMs)
+        RingConfig.KEY_BURN_IN_PROTECTION ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.burnInProtection)
+        RingConfig.KEY_MAX_BRIGHTNESS_PERCENT ->
+            prefs.getInt(key, RingConfig.DEFAULT.maxBrightnessPercent)
+        RingConfig.KEY_GLOW_STRENGTH -> prefs.getInt(key, RingConfig.DEFAULT.glowStrengthPercent)
+        RingConfig.KEY_CHARGING_STYLE -> prefs.getInt(key, RingConfig.DEFAULT.chargingStyle)
+        RingConfig.KEY_CHARGING_COLOR -> prefs.getInt(key, RingConfig.DEFAULT.chargingColor)
+        RingConfig.KEY_CHARGING_SPEED -> prefs.getInt(key, RingConfig.DEFAULT.chargingSpeedPercent)
+        RingConfig.KEY_CHARGING_STRENGTH ->
+            prefs.getInt(key, RingConfig.DEFAULT.chargingStrengthPercent)
+        RingConfig.KEY_BREATHING_STYLE -> prefs.getInt(key, RingConfig.DEFAULT.breathingStyle)
+        RingConfig.KEY_BREATHING_COLOR -> prefs.getInt(key, RingConfig.DEFAULT.breathingColor)
+        RingConfig.KEY_BREATHING_SPEED -> prefs.getInt(key, RingConfig.DEFAULT.breathingSpeedPercent)
+        RingConfig.KEY_BLINK_STYLE -> prefs.getInt(key, RingConfig.DEFAULT.blinkStyle)
+        RingConfig.KEY_BLINK_SPEED -> prefs.getInt(key, RingConfig.DEFAULT.blinkSpeedPercent)
+        RingConfig.KEY_BLINK_STRENGTH ->
+            prefs.getInt(key, RingConfig.DEFAULT.blinkStrengthPercent)
+        RingConfig.KEY_BLINK_INTRO_ENABLED ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.blinkIntroEnabled)
+        RingConfig.KEY_BLINK_INTRO_SECONDS ->
+            prefs.getInt(key, RingConfig.DEFAULT.blinkIntroSeconds)
+        RingConfig.KEY_CHARGING_ANIM_MODE ->
+            prefs.getInt(key, RingConfig.DEFAULT.chargingAnimMode)
+        RingConfig.KEY_CHARGING_FULL_THRESHOLD ->
+            prefs.getInt(key, RingConfig.DEFAULT.chargingFullRingThreshold)
+        RingConfig.KEY_PERCENT_NODES_ENABLED ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.percentNodesEnabled)
+        RingConfig.KEY_PERCENT_NODES ->
+            prefs.getString(key, PercentNodes.encode(RingConfig.DEFAULT.percentNodes))
+        RingConfig.KEY_MUSIC_PULSE_ENABLED ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.musicPulseEnabled)
+        RingConfig.KEY_MUSIC_PULSE_STYLE -> prefs.getInt(key, RingConfig.DEFAULT.musicPulseStyle)
+        RingConfig.KEY_MUSIC_CYCLE_SECONDS ->
+            prefs.getInt(key, RingConfig.DEFAULT.musicCycleSeconds)
+        RingConfig.KEY_MUSIC_COLOR_CYCLE ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.musicColorCycleEnabled)
+        RingConfig.KEY_MUSIC_COLOR -> prefs.getInt(key, RingConfig.DEFAULT.musicColor)
+        RingConfig.KEY_MUSIC_PULSE_STRENGTH ->
+            prefs.getInt(key, RingConfig.DEFAULT.musicPulseStrengthPercent)
+        RingConfig.KEY_MUSIC_FLASH_RANGE ->
+            prefs.getInt(key, RingConfig.DEFAULT.musicFlashRangePercent)
+        RingConfig.KEY_MUSIC_BEAT_BPM ->
+            prefs.getInt(key, RingConfig.DEFAULT.musicBeatBpm)
+        RingConfig.KEY_HIDE_IN_SHADE -> prefs.getBoolean(key, RingConfig.DEFAULT.hideInShade)
+        RingConfig.KEY_HIDE_IN_CONTROL_CENTER ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.hideInControlCenter)
+        RingConfig.KEY_LOW_BATTERY_TIGA ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.lowBatteryTigaEnabled)
+        RingConfig.KEY_LOW_BATTERY_TIGA_THRESHOLD ->
+            prefs.getInt(key, RingConfig.DEFAULT.lowBatteryTigaThreshold)
+        RingConfig.KEY_LOW_BATTERY_TIGA_SPEED ->
+            prefs.getInt(key, RingConfig.DEFAULT.lowBatteryTigaSpeedPercent)
+        RingConfig.KEY_BLINK_ON_SCREEN ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.blinkOnScreen)
+        RingConfig.KEY_BLINK_NOTIF_MODE ->
+            prefs.getInt(key, RingConfig.DEFAULT.blinkNotifMode)
+        RingConfig.KEY_BLINK_NOTIF_DURATION ->
+            prefs.getInt(key, RingConfig.DEFAULT.blinkNotifDurationSeconds)
+        RingConfig.KEY_HIDE_RING_ON_LOCK_SCREEN ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.hideRingOnLockScreen)
+        RingConfig.KEY_MUSIC_AUDIO_REACTIVE ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.musicAudioReactive)
+        RingConfig.KEY_MUSIC_REACT_SOURCE ->
+            prefs.getInt(key, RingConfig.DEFAULT.musicReactSource)
+        RingConfig.KEY_MUSIC_AUDIO_SENS ->
+            prefs.getInt(key, RingConfig.DEFAULT.musicAudioSensitivityPercent)
         else -> null
     }
 
@@ -102,6 +182,8 @@ class ConfigProvider : ContentProvider() {
             RingConfig.KEY_HIDE_ON_SCREENSHOT,
             RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE,
             RingConfig.KEY_STROKE_WIDTH,
+            RingConfig.KEY_TRACK_OPACITY,
+            RingConfig.KEY_GAP_DP,
             RingConfig.KEY_OFFSET_X,
             RingConfig.KEY_OFFSET_Y,
             RingConfig.KEY_SCALE,
@@ -114,6 +196,52 @@ class ConfigProvider : ContentProvider() {
             RingConfig.KEY_STATE_COLOR_PERFORMANCE,
             RingConfig.KEY_STATE_COLOR_CHARGING,
             RingConfig.KEY_LEVEL_RANGES,
+            RingConfig.KEY_BREATHING_ENABLED,
+            RingConfig.KEY_BREATHING_ON_IDLE,
+            RingConfig.KEY_BLINK_ON_NOTIFICATION,
+            RingConfig.KEY_BLINK_COLOR_ALERT,
+            RingConfig.KEY_BLINK_COLOR_ALT,
+            RingConfig.KEY_TAP_SHOW_PERCENT,
+            RingConfig.KEY_TAP_PERCENT_DURATION,
+            RingConfig.KEY_BURN_IN_PROTECTION,
+            RingConfig.KEY_MAX_BRIGHTNESS_PERCENT,
+            RingConfig.KEY_GLOW_STRENGTH,
+            RingConfig.KEY_CHARGING_STYLE,
+            RingConfig.KEY_CHARGING_COLOR,
+            RingConfig.KEY_CHARGING_SPEED,
+            RingConfig.KEY_CHARGING_STRENGTH,
+            RingConfig.KEY_BREATHING_STYLE,
+            RingConfig.KEY_BREATHING_COLOR,
+            RingConfig.KEY_BREATHING_SPEED,
+            RingConfig.KEY_BLINK_STYLE,
+            RingConfig.KEY_BLINK_SPEED,
+            RingConfig.KEY_BLINK_STRENGTH,
+            RingConfig.KEY_BLINK_INTRO_ENABLED,
+            RingConfig.KEY_BLINK_INTRO_SECONDS,
+            RingConfig.KEY_CHARGING_ANIM_MODE,
+            RingConfig.KEY_CHARGING_FULL_THRESHOLD,
+            RingConfig.KEY_PERCENT_NODES_ENABLED,
+            RingConfig.KEY_PERCENT_NODES,
+            RingConfig.KEY_MUSIC_PULSE_ENABLED,
+            RingConfig.KEY_MUSIC_PULSE_STYLE,
+            RingConfig.KEY_MUSIC_CYCLE_SECONDS,
+            RingConfig.KEY_MUSIC_COLOR_CYCLE,
+            RingConfig.KEY_MUSIC_COLOR,
+            RingConfig.KEY_MUSIC_PULSE_STRENGTH,
+            RingConfig.KEY_MUSIC_FLASH_RANGE,
+            RingConfig.KEY_MUSIC_BEAT_BPM,
+            RingConfig.KEY_HIDE_IN_SHADE,
+            RingConfig.KEY_HIDE_IN_CONTROL_CENTER,
+            RingConfig.KEY_LOW_BATTERY_TIGA,
+            RingConfig.KEY_LOW_BATTERY_TIGA_THRESHOLD,
+            RingConfig.KEY_LOW_BATTERY_TIGA_SPEED,
+            RingConfig.KEY_BLINK_ON_SCREEN,
+            RingConfig.KEY_BLINK_NOTIF_MODE,
+            RingConfig.KEY_BLINK_NOTIF_DURATION,
+            RingConfig.KEY_HIDE_RING_ON_LOCK_SCREEN,
+            RingConfig.KEY_MUSIC_AUDIO_REACTIVE,
+            RingConfig.KEY_MUSIC_REACT_SOURCE,
+            RingConfig.KEY_MUSIC_AUDIO_SENS,
         )
     }
 }

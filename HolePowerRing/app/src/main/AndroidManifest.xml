@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      音频驱动律动（v1.3.0）：在模块应用进程采集音量/内容类型，广播给 SystemUI。
+      仅在用户于设置页开启「音频驱动」并授权后才采集；前台服务带常驻通知明示。
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -38,6 +47,35 @@
             android:authorities="com.powerring.hole.config"
             android:exported="true"
             android:grantUriPermissions="false" />
+
+        <!--
+          消息提醒闪烁的主通道：用户给本应用授权「通知使用权」后，
+          系统用公开 API 把通知增删回调到这里，再广播同步给 SystemUI 进程。
+        -->
+        <service
+            android:name=".data.RingNotificationListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- 响应 SystemUI 启动时发来的「通知提醒状态」查询 -->
+        <receiver
+            android:name=".data.NotifStateResponder"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.powerring.hole.QUERY_NOTIF_STATE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 音频驱动律动：麦克风采集（前台服务，需 RECORD_AUDIO） -->
+        <service
+            android:name=".data.AudioReactiveService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 
 </manifest>

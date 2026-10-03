@@ -1,11 +1,14 @@
 package com.powerring.hole.hook
 
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowInsets
 import com.powerring.hole.core.ModuleLog
 import com.powerring.hole.ring.RingState
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedHelpers
+import java.lang.ref.WeakReference
 
 /**
  * 沉浸收起探针（兜底路径）。
@@ -55,17 +58,75 @@ object ImmersiveProbeHook {
     /** 诊断日志总行数上限，任何异常情况下都不允许刷屏 */
     private const val MAX_DIAG_LINES = 120
 
+    /** 自愈轮询间隔（ms）：回读状态栏窗口状态字段，把漏掉的 SHOWING 补回来。 */
+    private const val POLL_MS = 600L
+
+    /** 状态栏窗口状态字段所在类（回调内部类持有它的弱引用）。 */
+    private const val STATE_CONTROLLER_CLASS =
+        "com.android.systemui.statusbar.window.StatusBarWindowStateController"
+
     @Volatile
     private var installed = false
 
     // ---- 以下状态只在 SystemUI 主线程读写 ----
 
-    /** 上次已上报给 RingState 的取值，避免重复调用 */
-    private var lastDriven: Boolean? = null
-
     private var diagLines = 0
 
-    // 各 Hook 上次的日志内容，用于抑制重复行
+    /**
+     * 状态栏窗口状态控制器实例（自愈轮询靠它回读 `windowState`）。
+     *
+     * 来源：驱动回调是它的内部类，回调里 `param.thisObject.this$0` 就是它。
+     * 弱引用，不拖住宿主。
+     */
+    private var stateController: WeakReference<Any>? = null
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * 自愈轮询：定期回读 `StatusBarWindowStateController.windowState` 并对齐。
+     *
+     * 为什么要它：本探针是**事件驱动**的，而「隐藏」是一次性的（HIDING/HIDDEN），
+     * 「恢复」依赖系统再发一次 SHOWING。一旦那次 SHOWING 没到（锁屏、解锁过渡、
+     * 应用被强杀都可能），环就会被永久收缩成不可见。回读字段就能把这种残留纠正回来。
+     */
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            try {
+                if (RingState.screenOn) {
+                    val v = readWindowStateCollapsed()
+                    if (v != null) drive(v)
+                }
+            } catch (t: Throwable) {
+                ModuleLog.e("沉浸探针轮询异常", t)
+            }
+            handler.postDelayed(this, POLL_MS)
+        }
+    }
+
+    /** 立刻按实时值对齐一次（屏幕点亮 / 解锁完成时由 RingState 请求）。 */
+    fun reconcile() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { reconcile() }
+            return
+        }
+        val v = readWindowStateCollapsed() ?: return
+        drive(v)
+    }
+
+    /** 回读状态栏窗口状态：0=SHOWING 未收起；1=HIDING / 2=HIDDEN 收起；读不到 null。 */
+    private fun readWindowStateCollapsed(): Boolean? {
+        val ctrl = stateController?.get() ?: return null
+        val state = runCatching {
+            XposedHelpers.getIntField(ctrl, "windowState")
+        }.getOrNull() ?: return null
+        return when (state) {
+            STATE_SHOWING -> false
+            STATE_HIDING, STATE_HIDDEN -> true
+            else -> null
+        }
+    }
+
+    /** 各 Hook 上次的日志内容，用于抑制重复行 */
     private var lastInsets = ""
     private var lastWindowState = ""
     private var lastBarHeight = ""
@@ -100,6 +161,10 @@ object ImmersiveProbeHook {
             ModuleLog.e("未找到状态栏窗口状态回调类，沉浸收起检测未生效", null)
         } else {
             hookWindowState(stateCls)
+            // 只有挂上驱动回调才启动轮询：拿不到状态控制器时轮询没有数据源
+            handler.removeCallbacks(pollRunnable)
+            handler.postDelayed(pollRunnable, POLL_MS)
+            ModuleLog.i("沉浸探针：自愈轮询已启动（${POLL_MS}ms，字段 windowState）")
         }
     }
 
@@ -191,6 +256,13 @@ object ImmersiveProbeHook {
                             val host = runCatching {
                                 XposedHelpers.getObjectField(param.thisObject, "this\$0")
                             }.getOrNull()
+                            // 顺手记下控制器：自愈轮询靠它回读 windowState
+                            if (host != null && host.javaClass.name == STATE_CONTROLLER_CLASS) {
+                                if (stateController?.get() !== host) {
+                                    stateController = WeakReference(host)
+                                    ModuleLog.i("沉浸探针已捕获状态栏窗口状态控制器（轮询可回读 windowState）")
+                                }
+                            }
                             val cur = if (host == null) Int.MIN_VALUE else runCatching {
                                 XposedHelpers.getIntField(host, "windowState")
                             }.getOrDefault(Int.MIN_VALUE)
@@ -236,10 +308,12 @@ object ImmersiveProbeHook {
      * 双向通知（state=0 必定恢复），不存在 insets 那种"信号结构性恒为 0、
      * 一旦采信就把环永久藏掉"的风险。若某机型根本不派发该回调，则本探针从不
      * 调用 RingState，环保持常显——安全降级。
+     *
+     * v0.8.1：去重基准从本地 lastDriven 改为 [RingState.statusBarCollapsedNow]，
+     * 这样 [RingState.resetCollapseInputs] 的自愈复位能被本探针「看见」并重新驱动。
      */
     private fun drive(collapsed: Boolean) {
-        if (collapsed == lastDriven) return
-        lastDriven = collapsed
+        if (collapsed == RingState.statusBarCollapsedNow) return
         ModuleLog.i("沉浸探针驱动: collapsed=$collapsed")
         RingState.setStatusBarCollapsed(collapsed)
     }

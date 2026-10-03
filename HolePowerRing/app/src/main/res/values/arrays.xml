@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- LSPosed 模块固定作用域：系统界面 -->
+    <!-- LSPosed 模块固定作用域：系统界面（圆环宿主）。
+         v1.2.0 起不再包含 com.miui.aod（息屏提醒已按用户要求移除）。 -->
     <string-array name="module_scope">
         <item>com.android.systemui</item>
     </string-array>
