@@ -16,14 +16,6 @@ import java.lang.reflect.Field
 import java.lang.reflect.Method
 
 /**
- * 按「截图时隐藏」开关计算窗口 flags：开启时叠加 FLAG_SECURE，关闭时清除该位，
- * 其余位原样保留。幂等，可对同一 flags 反复调用。
- */
-internal fun secureFlagFor(flags: Int, hideOnScreenshot: Boolean): Int =
-    if (hideOnScreenshot) flags or WindowManager.LayoutParams.FLAG_SECURE
-    else flags and WindowManager.LayoutParams.FLAG_SECURE.inv()
-
-/**
  * 环形电量的独立窗口宿主。
  *
  * 为什么必须独立窗口：实测灵动岛是 SystemUI 通过 WindowManager 添加的
@@ -35,6 +27,13 @@ internal fun secureFlagFor(flags: Int, hideOnScreenshot: Boolean): Int =
  * cutoutMode=always —— 层带严格高于灵动岛的 191000，层级胜负不依赖添加顺序；
  * 高度跟随 cutout 安全区；FLAG_NOT_TOUCHABLE 使整个窗口不参与触摸，
  * 对状态栏操作零影响。
+ *
+ * 两个必须同时成立的窗口属性：
+ * - **受信覆盖层**（见 `applyTrustedOverlayFlag`）。缺它会被 MIUI 判为点按劫持源并
+ *   **全局**拦截点击，真机已验证（报告 §19）。
+ * - **不带 `FLAG_SECURE`**（见 `RING_WINDOW_FLAGS`）。它挡不住本机特权截图
+ *   （报告 §17.2），留着只会在 dumpsys 里多一个干扰位——注意它**不是**劫持拦截的
+ *   成因，去掉后拦截照旧，别再往这个方向查。
  */
 object RingWindowController {
 
@@ -54,6 +53,38 @@ object RingWindowController {
     private const val TYPE_RING_WINDOW = 2006
 
     /**
+     * 环窗口的 flags。
+     *
+     * 语义：不获取焦点、不拦截任何触摸（整个窗口触摸穿透），并允许铺到状态栏/挖孔区域。
+     *
+     * **`FLAG_NOT_TOUCHABLE` 不等于「不会被判劫持」**（报告 §19，2026-10-03 真机验证）：
+     * 带着这个位、窗口照样被 MIUI 计入点按劫持判定。真正决定成败的是
+     * `TRUSTED_OVERLAY` 私有标志，由 `applyTrustedOverlayFlag` 设置，这里给不出。
+     *
+     * **也不要加 `FLAG_SECURE`**：它挡不住本机特权截图（报告 §17.2），截图隐藏
+     * 全靠下面的 SF 层机制。它曾被怀疑是劫持拦截的成因，实测证伪——去掉后拦截照旧。
+     *
+     * 抽成 internal 常量是为了让 JVM 单测能断言「不含 SECURE」——
+     * `LayoutParams.FLAG_SECURE` 是编译期内联的 int 常量，不需要 Android 运行时。
+     */
+    internal const val RING_WINDOW_FLAGS =
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_SPLIT_TOUCH or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+
+    /**
+     * 本机 framework 实证（`work/dump_class.py device-fw android.view.WindowManager$LayoutParams`）：
+     * 受信覆盖层的私有标志位与设置入口。真机反射确认 `PRIVATE_FLAG_TRUSTED_OVERLAY = 0x20000000`。
+     * AOSP 新版的 `SYSTEM_FLAG_TRUSTED_OVERLAY` 在本机**不存在**（实测 NoSuchFieldException），别照搬。
+     */
+    private const val PRIVATE_FLAG_TRUSTED_OVERLAY = 0x20000000
+    private const val PRIVATE_FLAGS_FIELD = "privateFlags"
+    private const val SET_TRUSTED_OVERLAY_METHOD = "setTrustedOverlay"
+
+    /**
      * 窗口高度在 cutout 安全区之外的余量（dp）。
      * 需覆盖最大向下偏移（OFFSET_MAX=20dp）+ 环半径外沿，否则垂直偏移下半环被窗口裁切。
      * 向上偏移受屏幕顶物理限制，扩窗无法解决，由设置页文案说明。
@@ -71,15 +102,10 @@ object RingWindowController {
     private var attached = false
     private var retried = false
 
-    /** 最近一次已应用到窗口的开关值；-1 表示尚未应用（attach 失败重试路径会重新同步） */
-    @Volatile
-    private var appliedHideOnScreenshot: Int = -1
-
     // ---- 截图采集期 SF 层隐藏 ----
-    // FLAG_SECURE 在本机挡不住系统截图（特权采集连安全层一起捕获，dumpsys 已确认
-    // fl= 含 SECURE 仍被采到），故由 ScreenshotCaptureHook 在采集执行前提交
-    // SurfaceFlinger 层的临时隐藏事务：隐藏的 layer 任何权限都采不到，且事务与
-    // 采集请求按序进入 SF 主线程队列，能赶在合成之前生效。
+    // 环窗口不带 SECURE 位（原因见 RING_WINDOW_FLAGS），截图隐藏由 SurfaceFlinger
+    // 层机制承担：ScreenshotCaptureHook 在采集执行前提交临时隐藏事务，事务与采集
+    // 请求按序进入 SF 主线程队列，能赶在合成之前生效。
 
     private val captureCounter = CaptureHideCounter()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -126,6 +152,44 @@ object RingWindowController {
     private var appliedSkipSc: SurfaceControl? = null
     private var appliedSkipTarget: Int = -1
 
+    /**
+     * 把环窗口标记为「受信覆盖层」，消除厂商的点按劫持全局拦截（报告 §19）。
+     *
+     * 为什么要它：本机 InputDispatcher 窗口列表里，`StatusBar`/`NavigationBar0`/
+     * `NotificationShade`/灵动岛/同为 2006 的 `AntiMistakeTouchView` **全部带
+     * `TRUSTED_OVERLAY`，只有环窗口没有**；MIUI 据此把点按判为劫持并**全局**拦截
+     * （实测触摸能送达，随后以「前台被遮」名义弹 toast）。`FLAG_SECURE` 已证伪——
+     * 去掉后拦截照旧。
+     *
+     * 本机 framework 实证（2026-10-03，`work/dump_class.py device-fw` + 真机日志）：
+     * 常量名是 **`PRIVATE_FLAG_TRUSTED_OVERLAY = 0x20000000`**，AOSP 新版的
+     * `SYSTEM_FLAG_TRUSTED_OVERLAY` 在本机**不存在**（实测 NoSuchFieldException）；
+     * `LayoutParams` 自带公开方法 `setTrustedOverlay()`，优先走它——真机确认调用后
+     * `dumpsys window` 出现 `pfl=TRUSTED_OVERLAY`、`dumpsys input` 的 `inputConfig`
+     * 同步带上该位。反射常量与字段仅作旧 ROM 无此方法时的回落，全程包 try/catch，
+     * 取不到就维持现状，绝不抛异常到 SystemUI。
+     */
+    private fun applyTrustedOverlayFlag(params: WindowManager.LayoutParams) {
+        try {
+            val cls = WindowManager.LayoutParams::class.java
+            val field = cls.getField(PRIVATE_FLAGS_FIELD)
+            val setter = runCatching { cls.getMethod(SET_TRUSTED_OVERLAY_METHOD) }.getOrNull()
+            val route = if (setter != null) {
+                setter.invoke(params)
+                "setTrustedOverlay()"
+            } else {
+                field.setInt(params, field.getInt(params) or PRIVATE_FLAG_TRUSTED_OVERLAY)
+                "privateFlags"
+            }
+            val applied = field.getInt(params) and PRIVATE_FLAG_TRUSTED_OVERLAY != 0
+            ModuleLog.i(
+                "环窗口受信覆盖层标志已${if (applied) "设置" else "未生效"}（经 $route）",
+            )
+        } catch (t: Throwable) {
+            ModuleLog.e("设置 TRUSTED_OVERLAY 失败，环窗口维持不受信（点按劫持拦截可能照旧）", t)
+        }
+    }
+
     fun attach(context: Context) {
         if (attached) return
         appContext = context.applicationContext
@@ -170,33 +234,23 @@ object RingWindowController {
             // WRAP_CONTENT 会让纯 onDraw 的 View 测量为 0
             height = 156
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            // 不获取焦点、不拦截任何触摸（整个窗口触摸穿透）；
-            // FLAG_SECURE 由 secureFlagFor 按「截图时隐藏」开关叠加/清除，
-            // 使 SurfaceFlinger 在截图/录屏合成时排除本窗口（物理屏幕不受影响）
-            flags = secureFlagFor(
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_SPLIT_TOUCH or
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-                HookPrefs.get().hideOnScreenshot,
-            )
+            flags = RING_WINDOW_FLAGS
             title = "HolePowerRingWindow"
             // 与岛一致：窗口内容延伸到挖孔区域
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             }
+            applyTrustedOverlayFlag(this)
         }
 
         try {
             wm.addView(view, params)
             attached = true
             ringView = view
-            appliedHideOnScreenshot = if (HookPrefs.get().hideOnScreenshot) 1 else 0
             ModuleLog.i(
-                "环形电量独立窗口已添加（type=$TYPE_RING_WINDOW，层带 231000 > 灵动岛的 191000）",
+                "环形电量独立窗口已添加（type=$TYPE_RING_WINDOW，层带 231000 > 灵动岛的 191000，" +
+                    "w=${params.width} h=${params.height} flags=0x${Integer.toHexString(params.flags)}）",
             )
         } catch (t: Throwable) {
             ModuleLog.e("添加环窗口失败（首次），5 秒后重试一次", t)
@@ -206,37 +260,6 @@ object RingWindowController {
                 Handler(Looper.getMainLooper()).postDelayed({
                     appContext?.let { runCatching { attach(it) } }
                 }, 5000L)
-            }
-        }
-    }
-
-    /**
-     * 把「截图时隐藏」开关同步到环窗口 flags。
-     *
-     * 调用链：配置变化 → HookPrefs.refresh() → RingState.invalidateAll() →
-     * 下一次 onCutoutDraw 检出签名变化 → onConfigApplied（主线程）→ 本方法。
-     * 再 post 一层是因为 onCutoutDraw 处于绘制中，updateViewLayout 会重入布局；
-     * 状态去重放在 post 之前，避免每次重绘都调度空任务。
-     */
-    fun applyScreenshotHide() {
-        val view = ringView ?: return
-        val target = HookPrefs.get().hideOnScreenshot
-        if (appliedHideOnScreenshot == if (target) 1 else 0) return
-        view.post {
-            try {
-                val lp = view.layoutParams as? WindowManager.LayoutParams
-                val wm = windowManager
-                if (wm != null && lp != null) {
-                    val old = lp.flags
-                    lp.flags = secureFlagFor(old, target)
-                    if (lp.flags != old) {
-                        wm.updateViewLayout(view, lp)
-                        ModuleLog.i("环窗口截图隐藏已${if (target) "开启" else "关闭"}（FLAG_SECURE）")
-                    }
-                    appliedHideOnScreenshot = if (target) 1 else 0
-                }
-            } catch (t: Throwable) {
-                ModuleLog.e("同步环窗口截图隐藏开关失败", t)
             }
         }
     }

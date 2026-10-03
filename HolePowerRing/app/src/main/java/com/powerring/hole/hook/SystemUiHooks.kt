@@ -98,7 +98,6 @@ object SystemUiHooks {
                         BatteryObserver.start(app)
                         HookPrefs.refresh()
                         RingWindowController.attach(app)
-                        RingState.onConfigApplied = { RingWindowController.applyScreenshotHide() }
                         RingState.onCutoutFrame = { RingWindowController.syncScreenshotExclusion() }
                         RingState.onShadeCollapseToggled = { ShadeCollapseHook.syncFromSystem() }
                         ModuleLog.i("SystemUI Application 初始化完成")
