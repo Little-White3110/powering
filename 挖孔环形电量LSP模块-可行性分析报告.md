@@ -573,10 +573,15 @@ Hook 点：`com.android.systemui.statusbar.views.MiuiBatteryMeterView.updateIsla
   上的标志作废。`RingState.onCutoutFrame`（每次挖孔绘制触发）驱动
   `RingWindowController.syncScreenshotExclusion()` 按「layer 身份 + 开关值」
   去重，身份变化即补打，未变化的帧只花两次反射字段读取。
-- 三层机制并存，全部受同一开关控制：setSkipScreenshot（主效）+ FLAG_SECURE
-  （非特权采集兜底）+ captureDisplay Hook（AOSP 管线 ROM 兜底）。
+- 机制并存，全部受同一开关控制：setSkipScreenshot（主效）+ 采集期 `setVisibility(false)`
+  （硬排除）+ captureDisplay Hook（AOSP 管线 ROM 兜底）。
+  ~~FLAG_SECURE（非特权采集兜底）~~ —— **已于 2026-10-03 移除**：它连特权截图都挡不住
+  （17.2 判死），留着只多一个 dumpsys 干扰位；移除后截图隐藏行为不变（见 §19）。
 - 配置链路与其他键一致：PrefsStore → ConfigProvider → HookPrefs，热生效
-  （CONFIG_CHANGED 广播）；窗口 flags 类同步走主线程 `updateViewLayout`。
+  （CONFIG_CHANGED 广播）。
+  ~~窗口 flags 类同步走主线程 `updateViewLayout`~~ —— 该通路（`applyScreenshotHide` +
+  `RingState.onConfigApplied`）随 SECURE 位一起删除；现在开关只影响 SF 层调用，
+  由 `onCutoutFrame` 每帧自愈，无需 `updateViewLayout`。
 
 **验证状态**：真机验收通过（2026-10-03）：截图无环、开关热生效、屏幕显示不受
 影响、SystemUI 稳定运行。录屏排除是该 API 的设计语义，未单独复验。换机型/换
@@ -643,7 +648,85 @@ scene/flow。`work/find_classes.py`/`dump_class.py`/同-dex `xref.py` 静态候�
 
 ---
 
+## 19. 点按劫持防护与覆盖层授信（2026-10-03，真机已验证）
+
+**现象**：开启电量环后，**任意位置**点按都弹「已拦截点按劫持行为」，点击全部失效——不限于环所在的顶部 222px。机型 `25102RKBEC`，系统界面 `17.03.260226.r` / 插件 `18.2.2.2.0`。
+
+### 19.1 取证：唯一差异是 `TRUSTED_OVERLAY`
+
+`dumpsys input` 的 InputDispatcher 窗口列表是本问题的决定性证据：
+
+```
+HolePowerRingWindow    inputConfig=NOT_FOCUSABLE | NOT_TOUCHABLE                        alpha=0.799805 frame=[0,0][1200,222]
+AntiMistakeTouchView   inputConfig=NOT_FOCUSABLE | NOT_TOUCHABLE | TRUSTED_OVERLAY      alpha=0.700195
+NotificationShade      inputConfig=TRUSTED_OVERLAY | WATCH_OUTSIDE_TOUCH | ...          alpha=1
+StatusBar              inputConfig=NOT_FOCUSABLE | TRUSTED_OVERLAY                      alpha=1
+```
+
+环窗口是**全列表里唯一一个 `frame` 落在屏幕内、却没有 `TRUSTED_OVERLAY` 的窗口**。
+
+两轮排除法（都经过真机验证，不是推理）：
+
+| 尝试 | 结果 |
+|---|---|
+| `FLAG_NOT_TOUCHABLE` 早已设置 | 说明「窗口不参与触摸」**不等于**「不参与劫持判定」，MIUI 把穿透窗口照样计入遮蔽判定 |
+| 删掉 `FLAG_SECURE`（Step A） | `dumpsys window` 确认 `fl=` 已无 SECURE，**拦截照旧** ⇒ `FLAG_SECURE` 被证伪，不是成因 |
+
+拦截形态补充证据：`MIUIInput` 显示触摸 DOWN→UP **正常送达前台窗口**，随后以**前台被遮**的名义弹 toast（`NotificationService: Toast already killed. pkg=com.android.shell`——即 AOSP `ActivityToast` 的产物）。所以这不是"触摸发不进去"，而是"发进去之后被判可疑并作废"。
+
+### 19.2 授信由什么决定：类型区间 + 属主权限
+
+| 窗口 | type | `pfl` | 说明 |
+|---|---|---|---|
+| `DynamicIslandWindow` | 2009 `KEYGUARD_DIALOG` | `TRUSTED_OVERLAY` | 岛没调任何私有 API（`dump_class.py plugin …DynamicIslandWindowController` 只有普通 `lp/lpChanged`），授信是框架按类型+权限自动给的 |
+| `AntiMistakeTouchView` | **2006 `SYSTEM_OVERLAY`** | `TRUSTED_OVERLAY` | ⇒ **2006 这个类型本身可以被授信**，不是我们的障碍 |
+| `NavigationBar0` | 2019 | `TRUSTED_OVERLAY` | 硬保护类型区间内 |
+| `HolePowerRingWindow` | 2006 | **无** | 属主同环（SystemUI），差别只在没被标 |
+
+前提条件本机全部满足：`dumpsys package com.android.systemui` 显示 `ADD_TRUSTED_DISPLAY` 与 `INTERNAL_SYSTEM_WINDOW` 均 `install permissions: granted=true`，而环窗口正是 SystemUI 自己 `addView` 的。
+
+### 19.3 修复：框架自带的 `setTrustedOverlay()`
+
+`work/dump_class.py device-fw android.view.WindowManager$LayoutParams` 给出本机真实字段面：
+
+- `public static final int PRIVATE_FLAG_TRUSTED_OVERLAY`
+- `public int privateFlags`
+- `public void setTrustedOverlay()`
+
+**注意常量名**：AOSP 新版的 `SYSTEM_FLAG_TRUSTED_OVERLAY` 在本机**不存在**（真机实测 `NoSuchFieldException`），别再按网上常见写法反射。
+
+实现（`RingWindowController.applyTrustedOverlayFlag`）：在 `addView` 前反射取 `LayoutParams::setTrustedOverlay` 并调用；该方法不存在的旧 ROM 回落到 `privateFlags |= PRIVATE_FLAG_TRUSTED_OVERLAY`；全程包 `try/catch (Throwable)`（AGENTS.md 纪律 1）。
+
+真机效果：
+
+```
+dumpsys window → pfl=TRUSTED_OVERLAY
+dumpsys input  → inputConfig=NOT_FOCUSABLE | NOT_TOUCHABLE | TRUSTED_OVERLAY
+```
+
+任意位置点按恢复正常，**无需改窗口类型**——§11.2 的层带结论（2006=231000 压住岛 191000）原样保住。顺带排除了两条后备：`2000`(151000) 与 `2038`(111000) 都低于灵动岛，换过去会牺牲压岛能力。
+
+本机 `LayoutParams` 上 trusted/overlay 相关常量真值（反射取证所得，换机型须重取）：
+
+| 常量 | 值 |
+|---|---|
+| `PRIVATE_FLAG_TRUSTED_OVERLAY` | `0x20000000` |
+| `PRIVATE_FLAG_SYSTEM_APPLICATION_OVERLAY` | `0x8` |
+| `PRIVATE_FLAG_IS_ROUNDED_CORNERS_OVERLAY` | `0x100000` |
+| `SYSTEM_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS` | `0x80000` |
+
+### 19.4 新增判读铁律
+
+- 遇到「触摸被系统吃掉 / 弹点按劫持提示」，**第一步查 `dumpsys input` 里本窗口的 `inputConfig` 有没有 `TRUSTED_OVERLAY`**，不要先猜 `FLAG_NOT_TOUCHABLE`；本项目在这上面多绕了一轮（先误判成 `FLAG_SECURE`）。
+- `dumpsys window windows` 里某窗口**整行没有 `pfl=`**，等价于「私有标志全空 = 不受信」；对照同层带其它窗口的 `pfl=` 是最快的差异定位法。
+- 附带观测（**成因未定**）：环窗口 `alpha=0.799805` 并非本模块设置（代码从不设窗口 alpha）。授信修复后是否回落**未复测**，不作为结论。
+
+**验证状态**：真机验证通过（2026-10-03）——任意位置点按不再被拦。截图隐藏（§17）在 Step A 删掉 `FLAG_SECURE` 后改由纯 SF 层机制承担，同轮点按验收通过，但 §17 的截图六项清单未逐条复跑，下轮回归时补测。
+
+---
+
 ## 附录 A：关键类索引（逆向实证）
+
 
 **宿主 APK（com.android.systemui，17.03.260226.r）**
 

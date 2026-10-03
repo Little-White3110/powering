@@ -44,6 +44,14 @@ cd HolePowerRing
 
 仓库**没有真机自动化测试**，验证仍需真机：安装 APK → LSPosed 管理器启用模块 → 重启 SystemUI（`adb shell killall com.android.systemui`）→ 观察日志与界面。配置改动必须重启 SystemUI 才生效（配置在 SystemUI 进程内只读加载）。
 
+> **本机（25102RKBEC）实测的重启困境**：`adb shell killall com.android.systemui`、`am force-stop`、`adb shell kill <pid>` **三种方式都被 SELinux 拒**（`Operation not permitted` / 无效果，SystemUI 以普通应用 uid 运行）。`adb install -r <apk>` **有时会**顺带换出新进程、但**不保证**——2026-10-03 一轮里前两次装包都换了 pid，第三次没换，于是"验证通过"其实验的是上一版代码。
+>
+> **因此每次改完代码必须自己确认新代码真的在跑**，别信"我装过了"：
+> 1. `adb shell pidof com.android.systemui` 与安装前比对，pid 没变 = 没重载；
+> 2. `logcat -s HolePowerRing` 里应能看到本轮**新加的那行日志**（看不到就是旧进程）；
+> 3. pid 没变时只能重启设备（`adb reboot`，用户主力机，**须先征得同意**）或让用户手动重启。
+> 4. 同一轮里 `dumpsys package com.powerring.hole | grep lastUpdateTime` 与产物时间戳也要对上——本项目已因"装了旧包"和"装了没重启"各白跑一轮验证。
+
 ## 必须遵守的约定
 
 1. **Hook 全部要兜底捕获异常。** 任何 `beforeHookedMethod` / `afterHookedMethod` 内的逻辑，包括反射、Class.forName、类型转换，都必须包 `try/catch (Throwable)` 并用 `ModuleLog` 记录，绝不能让异常逃逸到 SystemUI。这是既有代码的统一模式，新增 Hook 请照做。
@@ -57,6 +65,9 @@ cd HolePowerRing
    - 需要灵动岛等**插件侧**信息时，**优先找宿主侧的等价信号**（灵动岛显隐就用宿主侧 `MiuiBatteryMeterView.updateIslandShowing`，见 §12.3）；
    - 宿主侧确实没有、必须走 loadClass 时，回调内只做字符串比较，把重活 `post` 到主线程队列后再执行，绝不内联；
    - 顺带铁律：**同层带内不要用 `dumpsys window windows` 的 `Window #N` 判断叠加顺序**（同带内它与实际合成顺序相反），要用 `dumpsys SurfaceFlinger --layers` 的 `Output Layer` 数组。
+9. **新增任何常驻覆盖层窗口，必须确认它被标为受信覆盖层（`TRUSTED_OVERLAY`）。** 否则会被 MIUI 的点按劫持防护**全局**拦截点击（不只拦窗口那一片），现象是"任意位置点按都弹提示"，很难归因到具体窗口。
+   - 判据用 `adb shell dumpsys input | grep <窗口名>` 看 `inputConfig=`，**不要**先猜 `FLAG_NOT_TOUCHABLE`（穿透窗口照样被计入劫持判定）；`dumpsys window windows` 里整行没有 `pfl=` 就等于不受信。
+   - 设置方式：`addView` 前反射调用框架自带的 `WindowManager.LayoutParams.setTrustedOverlay()`。本机常量名是 `PRIVATE_FLAG_TRUSTED_OVERLAY = 0x20000000`，**不是** AOSP 新版的 `SYSTEM_FLAG_TRUSTED_OVERLAY`（后者在本机 NoSuchFieldException）。详见可行性分析报告 §19。
 
 ## 逆向与分析工作方式
 
@@ -85,8 +96,9 @@ python xref.py              # 交叉引用分析
 - **电池图标取色链路：已确认（2026-10-01）**。`MiuiBatteryMeterIconView.onDarkChangeInternal()` 是系统给电池图标上色的唯一位置，`mLightColor`/`mDarkColor`/`mDarkIntensity` + 四个 `mBattery*Color` 字段可直接反射读取；反色动画时钟在 `LightBarTransitionsController.animateIconTint`。**未覆盖**镂空样式 `MiuiHollowBatteryMeterIconView`。
   - ⚠️ **该链路在可行性分析报告中的章节尚未补写**（原引用写作"§12"，但 §12 现已被「灵动岛显隐信号与 ANR 事故」占用，见下条）。补写时请用 **§13**，结论目前只暂存在本条。
 - **自定义配色四模式（2026-10-02）**：`color_mode` 四值互斥（0 跟随系统 / 1 固定单色 / 2 按电池状态 5 路 / 3 按电量区间），代码与 14 条 JVM 单测已通过，**真机验收尚未执行**（六项清单见可行性分析报告 §15 末尾）。契约、存储格式与 `use_custom_color` 遗留推导都在 §15。计划：`docs/superpowers/plans/2026-10-02-ring-custom-color-modes.md`
-- **截图时隐藏电量环：已确认（2026-10-03，真机验证通过）**。设置键 `hide_on_screenshot`（默认开，热生效）。本机真实截图引擎是独立进程 `com.miui.screenshot`（SystemUI 内 AOSP 管线休眠），FLAG_SECURE 会被特权截图绕过（`fl=` 含 SECURE 仍被采到）；主效机制为反射 `Transaction.setSkipScreenshot`（SF 层硬排除，录屏/投屏同样覆盖），灭屏/旋转后由 `RingState.onCutoutFrame` 每帧按 layer 身份自愈。`captureDisplay` Hook 保留给走 AOSP 管线的 ROM。三层机制与迭代证据见可行性分析报告 §17。换机型须先确认真实截图引擎（报告 §17.1 方法）
+- **截图时隐藏电量环：已确认（2026-10-03，真机验证通过）**。设置键 `hide_on_screenshot`（默认开，热生效）。本机真实截图引擎是独立进程 `com.miui.screenshot`（SystemUI 内 AOSP 管线休眠），FLAG_SECURE 会被特权截图绕过（`fl=` 含 SECURE 仍被采到）；主效机制为反射 `Transaction.setSkipScreenshot`（SF 层硬排除，录屏/投屏同样覆盖），灭屏/旋转后由 `RingState.onCutoutFrame` 每帧按 layer 身份自愈。`captureDisplay` Hook 保留给走 AOSP 管线的 ROM。三层机制与迭代证据见可行性分析报告 §17。**注**：环窗口现已**不带** `FLAG_SECURE`（2026-10-03 移除，它对本机无用；原 `applyScreenshotHide`/`onConfigApplied` 通路一并删除，开关只剩 SF 层调用），别把它当截图隐藏的一环再加回去，原因见 §19。换机型须先确认真实截图引擎（报告 §17.1 方法）
 - **下拉通知栏/控制中心收起电量环：已确认（2026-10-03，真机验证通过）**。设置键 `collapse_on_shade`（默认关，热生效），并入 `RingState` 三通路 `collapseProgress`（沉浸/有岛/面板，取最强者）。本机通知面板与控制中心是**两套独立管线**，必须两路布尔求或：通知走 `NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(java.lang.Boolean)`（名字带 "Qs" 却**不覆盖控制中心**），控制中心走 `ControlCenterExpandControllerDelegate.onVisibleChanged(boolean)`（成对派发）。行为是布尔（展开即收、收起即弹回，260ms 动画缓冲），非跟随手指——`onExpansionChanged(float)` 能给 fraction 但收起回落两轮未证实、有卡死风险，弃用。`ShadeExpansionStateManager.onPanelExpansionChanged(FZZ)` 与 `NotificationShadeWrapper.onPanelExpanded(Z)` 真机证伪后删除。换机型须先分别确认通知与控制中心的真实展开信号是否同路。见可行性分析报告 §18
+- **点按劫持防护全局拦截：已确认（2026-10-03，真机验证通过）**。开环后任意位置点按被拦，根因是环窗口是全列表里唯一「`frame` 在屏幕内却没有 `TRUSTED_OVERLAY`」的窗口。修复：`RingWindowController.applyTrustedOverlayFlag` 在 `addView` 前反射调用框架自带的 `LayoutParams.setTrustedOverlay()`（旧 ROM 回落 `privateFlags |= 0x20000000`），**无需改窗口类型**，§11 层带结论原样保住。两条已证伪的假设不要再查：`FLAG_NOT_TOUCHABLE` 挡不住劫持判定；`FLAG_SECURE` 不是成因（去掉后拦截照旧，它只因 §17.2 的截图原因被移除）。注意本机常量名是 `PRIVATE_FLAG_TRUSTED_OVERLAY`，AOSP 新版的 `SYSTEM_FLAG_TRUSTED_OVERLAY` 在本机不存在（实测 NoSuchFieldException）。换机型须先用 `dumpsys input` 核对 `inputConfig`。见可行性分析报告 §19
 
 ## 不要做的事
 
