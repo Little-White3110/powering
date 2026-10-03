@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import com.powerring.hole.data.BatteryObserver
 import com.powerring.hole.ring.CustomColors
+import com.powerring.hole.ring.PercentNodes
 import com.powerring.hole.ring.RingConfig
 import com.powerring.hole.ring.StateColors
 import java.io.File
@@ -28,12 +29,13 @@ object PrefsStore {
             hideBattery = p.getBoolean(RingConfig.KEY_HIDE_BATTERY, true),
             collapseOnImmersive = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_IMMERSIVE, true),
             collapseOnIsland = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_ISLAND, false),
-            collapseOnShade = p.getBoolean(RingConfig.KEY_COLLAPSE_ON_SHADE, false),
             hideOnScreenshot = p.getBoolean(RingConfig.KEY_HIDE_ON_SCREENSHOT, true),
             restoreBatteryOnLandscape = p.getBoolean(
                 RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE, true,
             ),
             strokeWidthDp = p.getFloat(RingConfig.KEY_STROKE_WIDTH, 2.5f),
+            trackOpacityPercent = p.getInt(RingConfig.KEY_TRACK_OPACITY, 100),
+            gapDp = p.getFloat(RingConfig.KEY_GAP_DP, 0.8f),
             offsetXDp = p.getFloat(RingConfig.KEY_OFFSET_X, 0f),
             offsetYDp = p.getFloat(RingConfig.KEY_OFFSET_Y, 0f),
             scale = p.getFloat(RingConfig.KEY_SCALE, 1f),
@@ -50,6 +52,82 @@ object PrefsStore {
             levelRanges = CustomColors.decodeRanges(
                 p.getString(RingConfig.KEY_LEVEL_RANGES, ""),
             ),
+            breathingEnabled = p.getBoolean(RingConfig.KEY_BREATHING_ENABLED, true),
+            breathingOnIdle = p.getBoolean(RingConfig.KEY_BREATHING_ON_IDLE, true),
+            blinkOnNotification = p.getBoolean(RingConfig.KEY_BLINK_ON_NOTIFICATION, true),
+            blinkColorAlert = p.getInt(RingConfig.KEY_BLINK_COLOR_ALERT, 0xFFFF3B30.toInt()),
+            blinkColorAlt = p.getInt(RingConfig.KEY_BLINK_COLOR_ALT, 0xFFFF9F0A.toInt()),
+            tapShowPercent = p.getBoolean(RingConfig.KEY_TAP_SHOW_PERCENT, true),
+            tapPercentDurationMs = p.getInt(RingConfig.KEY_TAP_PERCENT_DURATION, 2600),
+            burnInProtection = p.getBoolean(RingConfig.KEY_BURN_IN_PROTECTION, true),
+            maxBrightnessPercent = p.getInt(RingConfig.KEY_MAX_BRIGHTNESS_PERCENT, 85),
+            glowStrengthPercent = p.getInt(RingConfig.KEY_GLOW_STRENGTH, 100),
+            chargingStyle = p.getInt(
+                RingConfig.KEY_CHARGING_STYLE, RingConfig.CHARGING_STYLE_DOT,
+            ),
+            chargingColor = p.getInt(RingConfig.KEY_CHARGING_COLOR, 0),
+            chargingSpeedPercent = p.getInt(RingConfig.KEY_CHARGING_SPEED, 100),
+            chargingStrengthPercent = p.getInt(
+                RingConfig.KEY_CHARGING_STRENGTH, RingConfig.DEFAULT.chargingStrengthPercent,
+            ),
+            breathingStyle = p.getInt(
+                RingConfig.KEY_BREATHING_STYLE, RingConfig.BREATHING_STYLE_GLOW,
+            ),
+            breathingColor = p.getInt(RingConfig.KEY_BREATHING_COLOR, 0),
+            breathingSpeedPercent = p.getInt(RingConfig.KEY_BREATHING_SPEED, 100),
+            blinkStyle = p.getInt(RingConfig.KEY_BLINK_STYLE, RingConfig.BLINK_STYLE_ALTERNATE),
+            blinkSpeedPercent = p.getInt(RingConfig.KEY_BLINK_SPEED, 100),
+            blinkStrengthPercent = p.getInt(
+                RingConfig.KEY_BLINK_STRENGTH, RingConfig.DEFAULT.blinkStrengthPercent,
+            ),
+            blinkIntroEnabled = p.getBoolean(RingConfig.KEY_BLINK_INTRO_ENABLED, true),
+            blinkIntroSeconds = p.getInt(RingConfig.KEY_BLINK_INTRO_SECONDS, 2),
+            blinkOnScreen = p.getBoolean(RingConfig.KEY_BLINK_ON_SCREEN, true),
+            blinkNotifMode = p.getInt(
+                RingConfig.KEY_BLINK_NOTIF_MODE, RingConfig.BLINK_NOTIF_MODE_ALWAYS,
+            ),
+            blinkNotifDurationSeconds = p.getInt(RingConfig.KEY_BLINK_NOTIF_DURATION, 12),
+            hideRingOnLockScreen = p.getBoolean(
+                RingConfig.KEY_HIDE_RING_ON_LOCK_SCREEN, RingConfig.DEFAULT.hideRingOnLockScreen,
+            ),
+            chargingAnimMode = p.getInt(
+                RingConfig.KEY_CHARGING_ANIM_MODE, RingConfig.CHARGING_ANIM_SMART,
+            ),
+            chargingFullRingThreshold = p.getInt(RingConfig.KEY_CHARGING_FULL_THRESHOLD, 60),
+            percentNodesEnabled = p.getBoolean(RingConfig.KEY_PERCENT_NODES_ENABLED, true),
+            percentNodes = PercentNodes.decode(
+                if (p.contains(RingConfig.KEY_PERCENT_NODES)) {
+                    p.getString(RingConfig.KEY_PERCENT_NODES, "")
+                } else {
+                    null
+                },
+            ),
+            musicPulseEnabled = p.getBoolean(RingConfig.KEY_MUSIC_PULSE_ENABLED, true),
+            musicPulseStyle = p.getInt(
+                RingConfig.KEY_MUSIC_PULSE_STYLE, RingConfig.MUSIC_STYLE_BREATH,
+            ),
+            musicCycleSeconds = p.getInt(RingConfig.KEY_MUSIC_CYCLE_SECONDS, 6),
+            musicColorCycleEnabled = p.getBoolean(RingConfig.KEY_MUSIC_COLOR_CYCLE, true),
+            musicColor = p.getInt(RingConfig.KEY_MUSIC_COLOR, 0),
+            musicPulseStrengthPercent = p.getInt(RingConfig.KEY_MUSIC_PULSE_STRENGTH, 100),
+            musicFlashRangePercent = p.getInt(
+                RingConfig.KEY_MUSIC_FLASH_RANGE, RingConfig.DEFAULT.musicFlashRangePercent,
+            ),
+            musicBeatBpm = p.getInt(
+                RingConfig.KEY_MUSIC_BEAT_BPM, RingConfig.DEFAULT.musicBeatBpm,
+            ),
+            musicAudioReactive = p.getBoolean(RingConfig.KEY_MUSIC_AUDIO_REACTIVE, false),
+            musicReactSource = p.getInt(
+                RingConfig.KEY_MUSIC_REACT_SOURCE, RingConfig.MUSIC_REACT_ALL,
+            ),
+            musicAudioSensitivityPercent = p.getInt(
+                RingConfig.KEY_MUSIC_AUDIO_SENS, RingConfig.DEFAULT.musicAudioSensitivityPercent,
+            ),
+            hideInShade = p.getBoolean(RingConfig.KEY_HIDE_IN_SHADE, true),
+            hideInControlCenter = p.getBoolean(RingConfig.KEY_HIDE_IN_CONTROL_CENTER, true),
+            lowBatteryTigaEnabled = p.getBoolean(RingConfig.KEY_LOW_BATTERY_TIGA, false),
+            lowBatteryTigaThreshold = p.getInt(RingConfig.KEY_LOW_BATTERY_TIGA_THRESHOLD, 20),
+            lowBatteryTigaSpeedPercent = p.getInt(RingConfig.KEY_LOW_BATTERY_TIGA_SPEED, 100),
         )
     }
 

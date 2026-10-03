@@ -171,9 +171,10 @@ object BatteryHideHook {
         if (!inContainer) return
         if (force) {
             forcedViews.add(view)
-            if (view.visibility != View.GONE) {
-                view.visibility = View.GONE
-                ModuleLog.i("已隐藏状态栏电池图标")
+            // v1.3.0：不再「一下置 GONE」，改为 alpha 渐隐后再收走（用户反馈太突兀）
+            if (view.visibility != View.GONE && !isFading(view)) {
+                fadeOut(view)
+                ModuleLog.i("已隐藏状态栏电池图标（淡出 ${FADE_OUT_MS}ms）")
             }
         } else if (forcedViews.remove(view)) {
             // 开关已关闭：交还系统按其自身逻辑决定显隐，避免强行 VISIBLE 与灵动岛冲突
@@ -214,6 +215,59 @@ object BatteryHideHook {
         } catch (t: Throwable) {
             ModuleLog.e("交还系统可见性失败，直接置 VISIBLE", t)
             if (view.visibility == View.GONE) view.visibility = View.VISIBLE
+        }
+        // v1.3.0：出现时也淡入，与淡出对称；下滑/收起时图标不再「啪」地跳出
+        fadeIn(view)
+    }
+
+    // ---- 淡入淡出（v1.3.0）：原生电池图标随收/放平滑过渡 ----
+    //
+    // v1.3.2：淡出缩短到 180ms。环回场前 RingState 会先留 220ms 让电池退场
+    // （COLLAPSE_RETURN_DELAY_MS），这里必须明显短于它，否则环露头时电池还剩
+    // 一截没淡完，就会出现用户反馈的「环和电池同时出现在屏幕上」。
+
+    private const val FADE_OUT_MS = 180L
+
+    /** 淡入时长：环已经彻底收干净、电池回来时从容一点 */
+    private const val FADE_IN_MS = 260L
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** 正在做 alpha 动画的 View，避免重复启动（弱引用，随 View 回收） */
+    private val fading: MutableSet<View> = Collections.newSetFromMap(WeakHashMap())
+
+    private fun isFading(view: View): Boolean = synchronized(fading) { fading.contains(view) }
+
+    private fun runOnMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post(block)
+    }
+
+    private fun fadeOut(view: View) {
+        if (!synchronized(fading) { fading.add(view) }) return
+        runOnMain {
+            runCatching {
+                view.animate().cancel()
+                view.animate().alpha(0f).setDuration(FADE_OUT_MS).withEndAction {
+                    view.visibility = View.GONE
+                    view.alpha = 1f
+                    synchronized(fading) { fading.remove(view) }
+                }.start()
+            }.onFailure { synchronized(fading) { fading.remove(view) } }
+        }
+    }
+
+    private fun fadeIn(view: View) {
+        // 系统可能仍要求隐身（如显示灵动岛）：那就不要强行拉出来
+        if (view.visibility != View.VISIBLE) return
+        if (!synchronized(fading) { fading.add(view) }) return
+        runOnMain {
+            runCatching {
+                view.alpha = 0f
+                view.animate().cancel()
+                view.animate().alpha(1f).setDuration(FADE_IN_MS).withEndAction {
+                    synchronized(fading) { fading.remove(view) }
+                }.start()
+            }.onFailure { synchronized(fading) { fading.remove(view) } }
         }
     }
 }

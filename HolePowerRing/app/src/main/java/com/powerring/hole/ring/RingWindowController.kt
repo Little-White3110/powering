@@ -86,10 +86,13 @@ object RingWindowController {
 
     /**
      * 窗口高度在 cutout 安全区之外的余量（dp）。
-     * 需覆盖最大向下偏移（OFFSET_MAX=20dp）+ 环半径外沿，否则垂直偏移下半环被窗口裁切。
+     *
+     * 需覆盖：最大向下偏移（OFFSET_MAX=20dp）+ 环半径外沿；并留出足够余量，
+     * 避免大半径/大偏移态下半环被窗口裁切。62dp 给足安全空间。
+     *
      * 向上偏移受屏幕顶物理限制，扩窗无法解决，由设置页文案说明。
      */
-    private const val EXTRA_BOTTOM_DP = 26f
+    private const val EXTRA_BOTTOM_DP = 62f
 
     /** 采集全部结束后恢复环窗口的延时：给截图保存与预览动画留出时间 */
     private const val RESTORE_DELAY_MS = 1500L

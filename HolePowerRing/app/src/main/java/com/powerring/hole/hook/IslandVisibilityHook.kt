@@ -1,5 +1,7 @@
 package com.powerring.hole.hook
 
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewParent
 import com.powerring.hole.core.ModuleLog
@@ -7,6 +9,7 @@ import com.powerring.hole.ring.RingState
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedHelpers
+import java.lang.ref.WeakReference
 
 /**
  * 灵动岛显隐探针：驱动「有岛时收起圆环」。**宿主侧实现，不碰插件 ClassLoader。**
@@ -59,17 +62,65 @@ object IslandVisibilityHook {
     /** 该方法内部写入的岛显示状态字段 */
     private const val FIELD_ISLAND_SHOWING = "mIsIslandShowing"
 
+    /** 自愈轮询间隔（ms）：回读字段，纠正漏掉的「岛已收起」事件。 */
+    private const val POLL_MS = 600L
+
     @Volatile
     private var installed = false
 
     // ---- 以下状态只在 SystemUI 主线程读写 ----
 
-    /** 上次已上报给 RingState 的取值，避免高频回调反复驱动 */
-    private var lastDriven: Boolean? = null
-
     /** 实例父链只打印一次，避免刷屏 */
     @Volatile
     private var chainLogged = false
+
+    /**
+     * 状态栏电池容器内的首个实例（自愈轮询靠它回读 `mIsIslandShowing`）。
+     * 弱引用，不拖住 View。
+     */
+    private var meterView: WeakReference<View>? = null
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * 自愈轮询：定期回读 `mIsIslandShowing` 并对齐。
+     *
+     * 与沉浸探针同理：`updateIslandShowing` 是**事件驱动**的，一旦某次「岛已收起」
+     * 没被上报（锁屏 / 解锁过渡 / 播放器被强杀），角标就会永久为 true，
+     * 「有岛时收起圆环」开着时环就再也不出现。回读字段即可自我纠正。
+     */
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            try {
+                if (RingState.screenOn) {
+                    val v = readIslandShowing()
+                    if (v != null) drive(v)
+                }
+            } catch (t: Throwable) {
+                ModuleLog.e("灵动岛显隐轮询异常", t)
+            }
+            handler.postDelayed(this, POLL_MS)
+        }
+    }
+
+    /** 立刻按实时值对齐一次（屏幕点亮 / 解锁完成时由 RingState 请求）。 */
+    fun reconcile() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { reconcile() }
+            return
+        }
+        val v = readIslandShowing() ?: return
+        drive(v)
+    }
+
+    /** 回读岛显示状态；拿不到实例或字段时返回 null（不作判断）。 */
+    private fun readIslandShowing(): Boolean? {
+        val view = meterView?.get() ?: return null
+        if (!view.isAttachedToWindow) return null
+        return runCatching {
+            XposedHelpers.getBooleanField(view, FIELD_ISLAND_SHOWING)
+        }.getOrNull()
+    }
 
     fun install(classLoader: ClassLoader) {
         if (installed) return
@@ -93,6 +144,8 @@ object IslandVisibilityHook {
                         try {
                             val view = param.thisObject as? View ?: return
                             if (!isInStatusBatteryContainer(view)) return
+                            // 记下状态栏里的实例：自愈轮询靠它回读字段
+                            if (meterView?.get() !== view) meterView = WeakReference(view)
                             val showing = XposedHelpers.getBooleanField(
                                 param.thisObject, FIELD_ISLAND_SHOWING,
                             )
@@ -103,7 +156,12 @@ object IslandVisibilityHook {
                     }
                 },
             )
-            ModuleLog.i("灵动岛显隐 Hook 已挂载 $METER_VIEW.updateIslandShowing（宿主侧信号）")
+            handler.removeCallbacks(pollRunnable)
+            handler.postDelayed(pollRunnable, POLL_MS)
+            ModuleLog.i(
+                "灵动岛显隐 Hook 已挂载 $METER_VIEW.updateIslandShowing" +
+                    "（宿主侧信号 + 自愈轮询 ${POLL_MS}ms）",
+            )
         } catch (t: Throwable) {
             ModuleLog.e("Hook updateIslandShowing 失败（环保持常显）", t)
         }
@@ -139,9 +197,12 @@ object IslandVisibilityHook {
     }
 
     /** 变化过滤 + 驱动 [RingState]，与 ImmersiveProbeHook 的 drive 同构。 */
+    /**
+     * 去重基准取 [RingState.islandShowing]（而非本地缓存），
+     * 这样 [RingState.resetCollapseInputs] 的自愈复位能被本探针看见并重新驱动。
+     */
     private fun drive(showing: Boolean) {
-        if (showing == lastDriven) return
-        lastDriven = showing
+        if (showing == RingState.islandShowing) return
         ModuleLog.i("灵动岛显隐驱动: showing=$showing")
         RingState.setIslandShowing(showing)
     }

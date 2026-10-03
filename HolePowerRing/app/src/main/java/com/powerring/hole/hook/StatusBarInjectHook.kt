@@ -1,6 +1,5 @@
 package com.powerring.hole.hook
 
-import android.view.View
 import android.view.ViewGroup
 import com.powerring.hole.core.ModuleLog
 import com.powerring.hole.ring.PowerRingView

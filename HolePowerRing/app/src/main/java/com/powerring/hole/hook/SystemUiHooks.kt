@@ -18,10 +18,10 @@ import de.robv.android.xposed.XposedHelpers
  * 状态栏视图注入与挖孔覆盖层 onDraw
  * 两套实验载体保留在代码库中但不启用，避免多载体重影。
  *
- * 收起通路有三个信号源，都收敛到 RingState 的同一条 collapseProgress 通道：
- * [ImmersiveProbeHook]（状态栏窗口 shown/hidden）、[IslandVisibilityHook]
- * （MiuiBatteryMeterView.updateIslandShowing，宿主侧信号）与 [ShadeCollapseHook]
- * （NotificationShadeWindowControllerImpl.onShadeOrQsExpanded，shade/QS 合并布尔）。
+ * 收起通路信号源：[ImmersiveProbeHook]（状态栏窗口 shown/hidden）、[IslandVisibilityHook]
+ * （MiuiBatteryMeterView.updateIslandShowing，宿主侧信号）、[ShadeCollapseHook]
+ * （通知中心 onShadeOrQsExpanded + 控制中心 onVisibleChanged，见可行性分析报告 §18），
+ * 外加 data/BatteryObserver 看门狗回读的锁屏态；全部收敛到 RingState 同一条 collapseProgress 通道。
  */
 object SystemUiHooks {
 
@@ -54,6 +54,10 @@ object SystemUiHooks {
             // 挖孔几何确认通常晚于电池 View attach，就绪后补一次隐藏评估
             RingState.onCutoutResolved = { BatteryHideHook.refreshAll() }
             RingState.onOrientationChanged = { BatteryHideHook.refreshAll() }
+            // v1.3.2：环完全收起 / 完全回场的那一刻，重新评估电池图标显隐。
+            // 现在电池要等环彻底收干净才允许回来（避免「环与电池同框」），
+            // 所以收起动画跑完的这一刻必须主动踢一脚，否则图标会一直不回来。
+            RingState.onCollapseSettled = { BatteryHideHook.refreshAll() }
         } catch (t: Throwable) {
             ModuleLog.e("电池图标隐藏 Hook 安装异常", t)
         }
@@ -79,11 +83,36 @@ object SystemUiHooks {
             ModuleLog.e("截图采集 Hook 安装异常", t)
         }
 
-        // 面板拉起收起：合并布尔信号驱动 + 控制中心/通知侧 fraction 取证
+        // 面板拉起收起：通知中心与控制中心各挂一路布尔信号（可行性分析报告 §18）。
+        // 面板展开时环收起并把状态栏原生电池图标交还系统（面板里显示正常电量），收起后自动恢复。
         try {
             ShadeCollapseHook.install(classLoader)
+            RingState.onShadeExpandedChanged = { BatteryHideHook.refreshAll() }
         } catch (t: Throwable) {
             ModuleLog.e("面板收起信号安装异常", t)
+        }
+
+        // 点击挖孔显示电量（旁观状态栏触摸，不影响系统行为）
+        try {
+            CutoutTapHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("点击显示电量 Hook 安装异常", t)
+        }
+
+        // 消息提醒闪烁数据源（通知栏可清除通知存在性）
+        try {
+            NotificationBlinkHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("消息提醒闪烁 Hook 安装异常", t)
+        }
+
+        // 屏幕点亮 / 解锁完成时，让能实时回读系统值的收起通路各复核一次：
+        // 锁屏、解锁过渡、息屏都可能让某条通路留下一个「没有人清回去」的假值，
+        // 主动复核是治「解锁进桌面后环不见了」这类残留的最后一道网。
+        // 面板两路（ShadeCollapseHook）没有实时回读点位，只能靠事件与自愈复位兜。
+        RingState.onReconcileRequested = {
+            runCatching { ImmersiveProbeHook.reconcile() }
+            runCatching { IslandVisibilityHook.reconcile() }
         }
 
         // Application.onCreate 后拿到 Context：注册电量监听 + 添加环窗口
@@ -99,7 +128,6 @@ object SystemUiHooks {
                         HookPrefs.refresh()
                         RingWindowController.attach(app)
                         RingState.onCutoutFrame = { RingWindowController.syncScreenshotExclusion() }
-                        RingState.onShadeCollapseToggled = { ShadeCollapseHook.syncFromSystem() }
                         ModuleLog.i("SystemUI Application 初始化完成")
                     } catch (t: Throwable) {
                         ModuleLog.e("Application onCreate Hook 异常", t)

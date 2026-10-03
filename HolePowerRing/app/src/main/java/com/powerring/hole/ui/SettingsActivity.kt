@@ -22,7 +22,9 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             // pagerState 提升到主题容器之外：整棵 UI 树重建组合时 Tab 位置不丢
-            val pagerState = rememberPagerState(initialPage = 0) { 3 }
+            // 页数必须等于 SettingsScreen 里的 tabs 数量（基础/动效/外观/关于 = 4）。
+            // v1.0.0 之前这里误写成 3，导致点「关于」越界、点击无任何反应。
+            val pagerState = rememberPagerState(initialPage = 0) { 4 }
             val controller = remember { ThemeController(ColorSchemeMode.System) }
             // miuix 不碰系统栏：浅色主题下手动把状态栏图标压暗，否则恒为白色
             val darkTheme = isSystemInDarkTheme()

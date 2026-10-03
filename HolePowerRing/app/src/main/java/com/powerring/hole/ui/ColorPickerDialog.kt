@@ -33,11 +33,16 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 /**
  * 一次颜色编辑会话：标题、初值、确认回调。
  * 由页面侧持有（每次打开都新建实例），弹窗自身不携带业务语义。
+ *
+ * [onFollow] 非空时，弹窗左下角多出一个「跟随环色」按钮（用于把
+ * 「0 = 跟随」的语义重新写回）；[onFollowLabel] 为按钮文案。
  */
 data class ColorEditing(
     val label: String,
     val initialArgb: Int,
     val onConfirm: (Int) -> Unit,
+    val onFollow: (() -> Unit)? = null,
+    val onFollowLabel: String = "跟随环色",
 )
 
 /**
@@ -109,6 +114,17 @@ fun ColorPickerDialog(editing: ColorEditing?, onDismiss: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 「跟随环色」：把 0（跟随）写回配置，主要用于动画颜色的重置
+            editing?.onFollow?.let { onFollow ->
+                Button(
+                    onClick = {
+                        onFollow()
+                        onDismiss()
+                    },
+                ) {
+                    Text(text = editing.onFollowLabel)
+                }
+            }
             Spacer(modifier = Modifier.weight(1f))
             Button(onClick = onDismiss) {
                 Text(text = "取消")

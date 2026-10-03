@@ -1,9 +1,14 @@
 package com.powerring.hole.ring
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.LinearInterpolator
@@ -34,14 +39,123 @@ object RingState {
     // ---- 电池状态 ----
     @Volatile var level: Int = 50
         private set
-    @Volatile var charging: Boolean = false
+    @Volatile
+    var charging: Boolean = false
         private set
     @Volatile var powerSave: Boolean = false
+        private set
+
+    /** 当前是否有音乐在播放（BatteryObserver 轮询 AudioManager 驱动音乐律动） */
+    @Volatile
+    var musicActive: Boolean = false
         private set
     @Volatile var screenOn: Boolean = true
         private set
 
-    // ---- 收起通路（沉浸收起 / 灵动岛显示 / 面板拉起，共用一条动画通道） ----
+    // ---- 呼吸 / 提醒闪烁 / 点击显示电量（v0.2 新增渲染驱动状态） ----
+
+    /**
+     * 当前通知栏是否存在可清除的未处理通知。
+     *
+     * 两条独立通道：
+     * - 应用侧「通知使用权」通道（主通道，公开 API，跨版本稳定）
+     * - SystemUI 侧反射 Hook（兜底，未授权或机型不匹配时才用得上）
+     *
+     * **权威优先（v0.7.0）**：一旦应用侧通道证明自己确实持有通知使用权
+     * （[notifByAppAuthoritative]），就只认它、完全忽略反射兜底通道。因为反射通道
+     * 只能「posted 加、removed 减」，漏一次 removed 就永久卡在「有通知」，
+     * 表现为「通知早清了、环还在慢慢呼吸」；两通道取并集会把这种脏状态一直带下去。
+     * 未授权时（拿不到公开 API）才退回「并集」。
+     */
+    val notificationsActive: Boolean
+        get() = notifActiveByApp ||
+            (!notifByAppAuthoritative && notifActiveByHook) ||
+            SystemClock.uptimeMillis() < notifPreviewUntil
+
+    /** 应用侧通道是否具备「权威」身份（= 本应用已拿到通知使用权） */
+    @Volatile
+    private var notifByAppAuthoritative: Boolean = false
+
+    @Volatile
+    private var notifActiveByApp: Boolean = false
+
+    @Volatile
+    private var notifActiveByHook: Boolean = false
+
+    /**
+     * 最近一条可提醒通知的到达时刻（uptimeMillis）。
+     *
+     * 用于「提醒随时间衰减」：通知刚到时闪得快、颜色鲜艳，停留越久越慢越淡。
+     * uptimeMillis 是全系统统一时钟（跨进程一致），因此应用侧算出的时间
+     * 可以直接和 SystemUI 侧的 now 相减。
+     */
+    @Volatile
+    private var notifSinceMs: Long = 0L
+
+    /** 提醒已存在多久（ms）；当前没有提醒时返回 0。 */
+    fun notifAgeMs(): Long {
+        if (!notificationsActive) return 0L
+        val since = notifSinceMs
+        if (since <= 0L) return 0L
+        return (SystemClock.uptimeMillis() - since).coerceAtLeast(0L)
+    }
+
+    /** 是否知道最近一条提醒的到达时刻（进场快闪依赖它；Hook 兑底通道拿不到）。 */
+    fun hasNotifAge(): Boolean = notificationsActive && notifSinceMs > 0L
+
+    /**
+     * 当前这一帧该不该播报「消息提醒」。
+     *
+     * 三层判定：
+     * 1. 确实有可提醒通知（[notificationsActive]）；
+     * 2. 当前屏幕点亮（[RingConfig.blinkOnScreen]）——息屏时环整体不绘制，不再播报；
+     * 3. 持续方式：[RingConfig.BLINK_NOTIF_MODE_ALWAYS] 常驻（只要有未读就淡淡呼吸），
+     *    [RingConfig.BLINK_NOTIF_MODE_TIMED] 只在通知到达后的限定秒数内播报。
+     *
+     * 渲染与帧调度必须共用这一个判据，否则会出现「不再重绘但画面停在提醒态」。
+     */
+    fun notifBlinkActive(c: RingConfig): Boolean {
+        if (!c.blinkOnNotification || !notificationsActive) return false
+        // v1.2.0：息屏提醒整块下线，息屏时不播报
+        if (!screenOn || !c.blinkOnScreen) return false
+        if (c.blinkNotifMode == RingConfig.BLINK_NOTIF_MODE_ALWAYS) return true
+        // 预览通道必须完整播完，不受限时约束
+        if (SystemClock.uptimeMillis() < notifPreviewUntil) return true
+        val sec = c.blinkNotifDurationSeconds.coerceIn(
+            RingConfig.NOTIF_DURATION_MIN, RingConfig.NOTIF_DURATION_MAX,
+        )
+        // 拿不到到达时刻时按「刚到」处理，宁可多播一会儿也不漏
+        if (!hasNotifAge()) return true
+        return notifAgeMs() < sec * 1000L
+    }
+
+    /**
+     * Hook 兜底通道收到「新通知」时刷新到达时刻。
+     *
+     * Hook 侧拿不到系统的时间戳，只能用本机时钟打点；取最大值是为了不覆盖
+     * 应用侧权威通道已经写入的、更准确的时刻。
+     */
+    fun onNotificationArrived() {
+        val now = SystemClock.uptimeMillis()
+        if (now <= notifSinceMs) return
+        notifSinceMs = now
+        invalidateAll()
+    }
+
+    /** 设置页「预览提醒效果」的临时状态截止时刻；不影响真实通知标志位 */
+    @Volatile
+    private var notifPreviewUntil: Long = 0L
+
+    /** 设置页「预览音乐律动」的临时状态截止时刻 */
+    @Volatile
+    private var musicPreviewUntil: Long = 0L
+
+    /** 百分比数字显示截止时刻（uptimeMillis），0 表示未显示 */
+    @Volatile
+    var percentFlashUntil: Long = 0L
+        private set
+
+    // ---- 收起通路（沉浸收起 / 灵动岛显示，共用一条动画通道） ----
 
     /** 收起进度：0f 完整显示，1f 完全收缩不可见（渲染端按此收缩半径并衰减透明度） */
     @Volatile
@@ -52,9 +166,8 @@ object RingState {
     @Volatile
     private var statusBarCollapsed: Boolean = false
 
-    /** 最近一次上报的面板（通知栏/控制中心）拉起进度，0f 收起 / 1f 完全展开 */
-    @Volatile
-    private var shadeCollapseFraction: Float = 0f
+    /** 只读快照：沉浸收起探针据此做「值未变则不驱动」，自愈复位后仍能再次驱动。 */
+    val statusBarCollapsedNow: Boolean get() = statusBarCollapsed
 
     /** 最近一次上报的灵动岛显示状态（由 IslandVisibilityHook 驱动，渲染侧只读） */
     @Volatile
@@ -63,7 +176,167 @@ object RingState {
 
     private var collapseAnimator: ValueAnimator? = null
     private val collapseInterpolator = DecelerateInterpolator(1.5f)
-    private val COLLAPSE_DURATION_MS = 260L
+
+    /**
+     * 「环回场时先等电池淡出」的延迟（ms，v1.3.2）。
+     *
+     * 用户反馈：上划收起面板很慢时（尤其最后一段），圆环和原生电池图标会
+     * **同框**出现。根因是电池淡出（260ms）与环回场（300ms）各自跑各自的动画，
+     * 中间那段两者都在屏幕上。现在环回场延后这么久再开始，让电池先退干净。
+     */
+    private const val COLLAPSE_RETURN_DELAY_MS = 220L
+
+    /**
+     * 收起动画「跑到头」时回调（v1.3.2）。
+     *
+     * 电池图标是否隐藏现在要等环**真的收完**才放开（见 [shouldForceHideBattery]），
+     * 因此动画结束这一刻必须通知电池侧重新评估一次，否则图标会一直不回来。
+     * 由 SystemUiHooks 接到 `BatteryHideHook.refreshAll()`。
+     */
+    @Volatile
+    var onCollapseSettled: (() -> Unit)? = null
+
+    private fun notifyCollapseSettled() {
+        try {
+            onCollapseSettled?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("收起完成回调异常", t)
+        }
+    }
+
+    /**
+     * 收起 / 弹回动画时长（ms）。
+     * v1.2.0：260 → 300。用户反馈控制中心出现时「太突兀」，稍长一点的收缩
+     * 让圆环的退场更从容（与原生电池图标的淡入淡出放在一起看更协调）。
+     */
+    private val COLLAPSE_DURATION_MS = 300L
+
+    /**
+     * 控制中心 / 通知面板是否展开（由 ShadeCollapseHook 驱动）。
+     * 展开时环收起并把原生电池图标交还系统，见 [setShadeExpanded]。
+     */
+    @Volatile
+    private var shadeExpanded: Boolean = false
+
+    /** 只读快照：控制中心探针据此做「值未变则不驱动」并配合自愈轮询。 */
+    val shadeExpandedNow: Boolean get() = shadeExpanded
+
+    /**
+     * 控制中心（HyperOS 右侧 QS 面板）是否正在显示。
+     *
+     * 与 [shadeExpanded]（通知中心）是两条独立输入：HyperOS 把两块面板拆成了
+     * 两个控制器，信号源也不同。两路都由 hook/ShadeCollapseHook 驱动。
+     */
+    @Volatile
+    private var controlCenterShowing: Boolean = false
+
+    /** 只读快照：控制中心探针去重与自愈轮询用。 */
+    val controlCenterShowingNow: Boolean get() = controlCenterShowing
+
+    /** 控制中心展开状态变化回调（hook 层据此交还/收回原生电池图标）。 */
+    @Volatile
+    var onShadeExpandedChanged: (() -> Unit)? = null
+
+    // ---- 锁屏（v1.3.3：保留系统原锁屏，只去掉挖孔圆环） ----
+
+    /**
+     * 锁屏是否正在显示（v1.3.3）。
+     *
+     * 由看门狗低频回读 `KeyguardManager.isKeyguardLocked()`（[syncLockScreenState]）
+     * 驱动，用于「锁屏时隐藏圆环」选项：勾选后锁屏上把环收起、并把原生电池图标
+     * 交还系统，于是**保留系统原锁屏**、只在锁屏上去掉挖孔圆环；解锁后环自动回来。
+     */
+    @Volatile
+    private var lockScreenShowing: Boolean = false
+
+    /** 只读快照：看门狗据此做「值未变则不驱动」。 */
+    val lockScreenShowingNow: Boolean get() = lockScreenShowing
+
+    /**
+     * 锁屏显隐变化时调用：刷新收起目标（勾选「锁屏时隐藏圆环」时收起）并重绘。
+     */
+    fun setLockScreenShowing(showing: Boolean) {
+        if (lockScreenShowing == showing) return
+        lockScreenShowing = showing
+        ModuleLog.i("锁屏显示状态: showing=$showing 收起目标=${collapseTarget()}")
+        animateCollapseTo(collapseTarget())
+        invalidateAll()
+        try {
+            // 锁屏隐藏期间原生电池要交还系统（见 [shouldForceHideBattery]），踢一次电池侧
+            onShadeExpandedChanged?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("锁屏显示回调异常", t)
+        }
+    }
+
+    /**
+     * 回读一次锁屏状态（公开 API [KeyguardManager.isKeyguardLocked]，跨版本稳定）。
+     *
+     * 由看门狗低频调用；同时在「屏幕点亮 / 解锁完成」这两个稳定时刻主动调一次，
+     * 保证解锁进桌面后瞬间就能拿到「已不锁屏」，不会再拖成延迟显示。
+     */
+    fun syncLockScreenState() {
+        val ctx = appContext ?: return
+        val km = runCatching {
+            ctx.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        }.getOrNull() ?: return
+        val locked = runCatching { km.isKeyguardLocked }.getOrDefault(false)
+        setLockScreenShowing(locked)
+    }
+
+    // ---- 动效淡入淡出包络（v1.2.0） ----
+
+    /**
+     * 提醒 / 音乐律动这两个「外来效果」的淡入淡出进度（0–1）。
+     *
+     * 用户反馈「各种通知和音乐律动效果到正常变化太突兀」，因此不再让效果直接
+     * 硬切上/下场：效果出现时从 0 平滑升到 1，消失时从 1 平滑降回 0，渲染端按
+     * 这个值把「效果色」与「正常环色」做插值。这样通知来/走、音乐开始/停止
+     * 都是渐变而不是闪切。
+     *
+     * 时间驱动的推进放在 [effectMix] 里（每次绘制调用一次），
+     * [effectTransitioning] 负责在过渡期间让入口持续产帧。
+     */
+    private const val EFFECT_FADE_MS = 460L
+
+    @Volatile
+    private var effectMixFrom: Float = 0f
+    @Volatile
+    private var effectMixTarget: Float = 0f
+    @Volatile
+    private var effectMixStartMs: Long = 0L
+
+    /** 当前「外来效果」是否应当显示（提醒或音乐律动）。 */
+    fun effectActiveNow(c: RingConfig): Boolean =
+        notifBlinkActive(c) || (c.musicPulseEnabled && musicPulsing)
+
+    private fun effectMixNow(): Float {
+        val start = effectMixStartMs
+        if (start <= 0L) return effectMixTarget
+        val t = ((SystemClock.uptimeMillis() - start).toFloat() / EFFECT_FADE_MS).coerceIn(0f, 1f)
+        return effectMixFrom + (effectMixTarget - effectMixFrom) * t
+    }
+
+    /**
+     * 取当前的淡入淡出进度（0–1），并在目标变化时从当前值重新起一段过渡。
+     * 只在绘制线程调用（每次 [RingRenderer.draw] 调一次）。
+     */
+    fun effectMix(c: RingConfig): Float {
+        val target = if (effectActiveNow(c)) 1f else 0f
+        if (target != effectMixTarget) {
+            effectMixFrom = effectMixNow()
+            effectMixTarget = target
+            effectMixStartMs = SystemClock.uptimeMillis()
+        }
+        return effectMixNow()
+    }
+
+    /** 包络是否还在过渡中（过渡期间必须持续重绘）。 */
+    fun effectTransitioning(c: RingConfig): Boolean {
+        val target = if (effectActiveNow(c)) 1f else 0f
+        val now = effectMixNow()
+        return if (target >= 1f) now < 0.999f else now > 0.001f
+    }
 
     /** 挖孔填充色（= 状态栏图标色），决定使用浅色还是深色令牌 */
     @Volatile
@@ -134,23 +407,99 @@ object RingState {
     @Volatile
     private var lastConfigSig: String = ""
 
-    /** 上一帧的「下拉面板收起」开关值，用于检出热翻转（见 [onShadeCollapseToggled]） */
-    @Volatile
-    private var lastCollapseOnShade: Boolean = false
-
     private fun RingConfig.signature() =
-        "$ringEnabled|$hideOnScreenshot|$strokeWidthDp|$offsetXDp|$offsetYDp|$scale|" +
+        "$ringEnabled|$hideOnScreenshot|$strokeWidthDp|$gapDp|$offsetXDp|$offsetYDp|$scale|" +
             "$colorMode|$customColor|" +
-            "$collapseOnImmersive|$collapseOnIsland|$collapseOnShade|" +
+            "$collapseOnImmersive|$collapseOnIsland|" +
             "${stateColors.normal},${stateColors.low},${stateColors.powerSave}," +
             "${stateColors.performance},${stateColors.charging}|" +
-            CustomColors.encodeRanges(levelRanges)
+            CustomColors.encodeRanges(levelRanges) +
+            "|$breathingEnabled|$breathingOnIdle|$blinkOnNotification|$tapShowPercent|" +
+            "$tapPercentDurationMs|" +
+            "$blinkColorAlert|$blinkColorAlt|$burnInProtection|$maxBrightnessPercent|" +
+            "$glowStrengthPercent|$trackOpacityPercent|" +
+            "$chargingStyle|$chargingColor|$chargingSpeedPercent|$chargingAnimMode|" +
+            "$chargingFullRingThreshold|$chargingStrengthPercent|" +
+            "$breathingStyle|$breathingColor|$breathingSpeedPercent|" +
+            "$blinkStyle|$blinkSpeedPercent|$blinkStrengthPercent|$blinkIntroEnabled|$blinkIntroSeconds|" +
+            "$percentNodesEnabled|${PercentNodes.encode(percentNodes)}|" +
+            "$musicPulseEnabled|$musicPulseStyle|$musicCycleSeconds|$musicColorCycleEnabled|" +
+            "$musicColor|$musicPulseStrengthPercent|$musicFlashRangePercent|$musicBeatBpm|" +
+            "$musicAudioReactive|$musicReactSource|$musicAudioSensitivityPercent|" +
+            "$hideInShade|$hideInControlCenter|" +
+            "$lowBatteryTigaEnabled|$lowBatteryTigaThreshold|$lowBatteryTigaSpeedPercent|" +
+            "$blinkOnScreen|$blinkNotifMode|$blinkNotifDurationSeconds|" +
+            "$hideRingOnLockScreen"
 
     // ---- 生命周期 ----
 
     fun attachContext(context: Context) {
         appContext = context.applicationContext
         HookPrefs.hostContext = appContext
+        startCollapseWatchdog()
+    }
+
+    // ---- 收起状态看门狗 ----
+
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * 看门狗周期（ms）：比探针的 600ms 轮询稍密一点，专门纠正「状态与画面不一致」。
+     *
+     * 它只管一件事：**动画既没在跑、画面进度又和目标对不上时，把进度直接对齐**。
+     * 典型场景是收起动画被打断（解锁、窗口切换）后停在中间，或某个探针复位了状态
+     * 却没触发到重绘。这一层与探针的「字段回读」互相独立：探针管「标志对不对」，
+     * 看门狗管「画面跟没跟上」。
+     */
+    private const val WATCHDOG_MS = 400L
+
+    @Volatile
+    private var watchdogStarted = false
+
+    private val watchdogRunnable = object : Runnable {
+        override fun run() {
+            try {
+                if (screenOn) {
+                    // v1.3.3：顺带回读一次锁屏状态（约每 3 个 tick ≈ 1.2s 一次，
+                    // 避免每秒多次 binder 调用），驱动「锁屏时隐藏圆环」
+                    lockPollTick++
+                    if (lockPollTick >= LOCK_POLL_TICKS) {
+                        lockPollTick = 0
+                        syncLockScreenState()
+                    }
+                    val anim = collapseAnimator
+                    // isRunning 在 startDelay 期间恒为 false，而回场动画有
+                    // COLLAPSE_RETURN_DELAY_MS 的延迟；只看 isRunning 就会在延迟窗口里
+                    // 误判「没在动画」，把进度硬刷到目标值，随后延迟到点的动画第一帧又
+                    // 把进度写回去 —— 肉眼就是「闪一下才正常显示」。isStarted 覆盖延迟期。
+                    val animating = anim != null && (anim.isRunning || anim.isStarted)
+                    val target = collapseTarget()
+                    if (!animating && kotlin.math.abs(target - collapseProgress) > 0.01f) {
+                        ModuleLog.i(
+                            "收起看门狗纠正：progress=$collapseProgress → target=$target" +
+                                "（沉浸=$statusBarCollapsed 岛=$islandShowing " +
+                                "通知中心=$shadeExpanded 控制中心=$controlCenterShowing 锁屏=$lockScreenShowing）",
+                        )
+                        collapseProgress = target
+                        invalidateAll()
+                    }
+                }
+            } catch (t: Throwable) {
+                ModuleLog.e("收起看门狗异常", t)
+            }
+            watchdogHandler.postDelayed(this, WATCHDOG_MS)
+        }
+    }
+
+    /** 锁屏状态回读节流：每 [LOCK_POLL_TICKS] 个看门狗周期（≈1.2s）回读一次。 */
+    private var lockPollTick = 0
+    private const val LOCK_POLL_TICKS = 3
+
+    private fun startCollapseWatchdog() {
+        if (watchdogStarted) return
+        watchdogStarted = true
+        watchdogHandler.postDelayed(watchdogRunnable, WATCHDOG_MS)
+        ModuleLog.i("收起状态看门狗已启动（${WATCHDOG_MS}ms）")
     }
 
     fun attachCutoutView(view: View) {
@@ -172,14 +521,34 @@ object RingState {
     }
 
     fun updateBattery(level: Int, charging: Boolean, powerSave: Boolean) {
-        val changed = this.level != level || this.charging != charging || this.powerSave != powerSave
+        val oldLevel = this.level
+        val changed = oldLevel != level || this.charging != charging || this.powerSave != powerSave
         this.level = level.coerceIn(0, 100)
         this.charging = charging
         this.powerSave = powerSave
         if (changed) {
             ModuleLog.i("电池状态: level=${this.level} charging=$charging powerSave=$powerSave")
+            maybeFlashPercentNode(oldLevel, this.level)
             invalidateAll()
         }
+    }
+
+    /**
+     * 电量跨过用户设置的节点（如 20 / 80 / 100）时，短暂显示一次具体电量数字。
+     *
+     * 判据是「跨过」而不是「等于」：电量以 1% 步进上报，跨过瞬间新旧值通常
+     * 都不等于节点本身；用区间比较（上行 old<n≤new / 下行 old>n≥new）才能
+     * 稳定命中，也不会因上报抖动重复触发。
+     */
+    private fun maybeFlashPercentNode(oldLevel: Int, newLevel: Int) {
+        if (oldLevel == newLevel) return
+        val c = config
+        if (!c.percentNodesEnabled || c.percentNodes.isEmpty()) return
+        val crossed = c.percentNodes.firstOrNull { n ->
+            (oldLevel < n && newLevel >= n) || (oldLevel > n && newLevel <= n)
+        } ?: return
+        ModuleLog.i("电量节点命中: ${oldLevel}% -> ${newLevel}% 节点=${crossed}%")
+        flashPercent()
     }
 
     fun setScreenOn(on: Boolean) {
@@ -188,6 +557,174 @@ object RingState {
             ModuleLog.i("屏幕状态: screenOn=$on")
             invalidateAll()
         }
+    }
+
+    /** 音乐播放状态变化（BatteryObserver 轮询驱动，驱动「音乐律动」） */
+    fun setMusicActive(active: Boolean) {
+        if (musicActive == active) return
+        musicActive = active
+        ModuleLog.i("音乐播放状态: active=$active")
+        invalidateAll()
+    }
+
+    /** 当前是否按音乐律动渲染（真实播放 或 设置页正在预览） */
+    val musicPulsing: Boolean
+        get() = musicActive || SystemClock.uptimeMillis() < musicPreviewUntil
+
+    /**
+     * 麦克风实时音量（0–1，v1.3.0「音频驱动律动」用）。
+     *
+     * 由模块应用侧的 AudioReactiveService 采集后广播过来；未开音频驱动时恒为 0。
+     * 只影响律动的亮度/幅度，不参与其它任何判据。
+     */
+    @Volatile
+    var audioLevel: Float = 0f
+        private set
+
+    /**
+     * 音频内容类型（v1.3.0）：0 = 未知/静音，1 = 音乐，2 = 人声。
+     * 供「人声/音乐」律动形式与「反应源」筛选使用。
+     */
+    @Volatile
+    var audioKind: Int = 0
+        private set
+
+    /** 音频内容类型常量（与 AudioReactiveService 的 KIND_* 对齐）。 */
+    const val AUDIO_KIND_UNKNOWN = 0
+    const val AUDIO_KIND_MUSIC = 1
+    const val AUDIO_KIND_VOICE = 2
+
+    /** 音频驱动数据到达（应用侧采集 → 广播 → BatteryObserver 调用）。 */
+    fun setAudioLevel(level: Float, kind: Int) {
+        val l = level.coerceIn(0f, 1f)
+        if (l == audioLevel && kind == audioKind) return
+        audioLevel = l
+        audioKind = kind
+        // 只有开了音频驱动才值得为它产帧，避免无谓唤醒
+        if (config.musicAudioReactive) invalidateAll()
+    }
+
+    /** 设置页「预览音乐律动」：临时按律动渲染一小段时间。 */
+    fun previewMusic(durationMs: Long = 6000L) {
+        musicPreviewUntil = SystemClock.uptimeMillis() + durationMs
+        ModuleLog.i("预览音乐律动: ${durationMs}ms")
+        invalidateAll()
+    }
+
+    /** 通知栏可清除通知存在性变化（由 NotificationBlinkHook 调用，兜底通道） */
+    fun setNotificationsActive(active: Boolean) = setNotificationsActiveFromHook(active)
+
+    /**
+     * 应用侧「通知使用权」通道推来的提醒状态（主通道）。
+     *
+     * [authoritative] = true 表示推送方确实持有通知使用权、数据来自系统真实回调。
+     * 此时把反射兜底通道的历史状态一并清掉——否则它漏掉的 removed 会让
+     * [notificationsActive] 永久为真（症状：通知清了环还在呼吸）。
+     */
+    fun setNotificationsActiveFromApp(
+        active: Boolean,
+        sinceMs: Long = 0L,
+        authoritative: Boolean = false,
+    ) {
+        val authChanged = notifByAppAuthoritative != authoritative
+        notifByAppAuthoritative = authoritative
+        noteNotifTime(active, sinceMs)
+        if (authChanged) {
+            if (authoritative && notifActiveByHook) {
+                notifActiveByHook = false
+                ModuleLog.i("通知提醒：应用侧已授权，丢弃反射兜底通道的残留状态")
+            }
+            ModuleLog.i("通知提醒通道切换：应用侧权威=$authoritative")
+            invalidateAll()
+        }
+        if (notifActiveByApp == active) return
+        notifActiveByApp = active
+        ModuleLog.i("通知提醒状态(app): active=$active 权威=$authoritative 合计=$notificationsActive")
+        invalidateAll()
+    }
+
+    /** SystemUI 侧反射 Hook 推来的提醒状态（兜底通道） */
+    fun setNotificationsActiveFromHook(active: Boolean) {
+        noteNotifTime(active, 0L)
+        if (notifActiveByHook == active) return
+        notifActiveByHook = active
+        ModuleLog.i("通知提醒状态(hook): active=$active 合计=$notificationsActive")
+        invalidateAll()
+    }
+
+    /**
+     * 维护「提醒起始时刻」：用于随时间衰减。
+     *
+     * - 应用侧能提供真实的「最新一条通知到达时间」时用它（更准，第二条通知到达
+     *   会把计时重置回新鲜期）；
+     * - 拿不到时（Hook 兜底通道）在**状态由无到有**的那一刻记本地时间；
+     * - 只允许时间往前推，避免两条通道交替上报把计时来回拨动。
+     */
+    private fun noteNotifTime(active: Boolean, sinceMs: Long) {
+        if (!active) return
+        val stamp = if (sinceMs > 0L) sinceMs else {
+            if (notificationsActive) notifSinceMs else SystemClock.uptimeMillis()
+        }
+        if (stamp > notifSinceMs) notifSinceMs = stamp
+    }
+
+    /**
+     * 设置页「预览提醒效果」：临时把提醒状态置真一小段时间。
+     *
+     * 单独用一条预览通道而不是直接改真实标志位，预览结束不会把真实提醒误清。
+     * 连续动画调度由 [needsContinuousAnimation] 负责，预览到点后自然停在正常画面。
+     */
+    fun previewNotifications(durationMs: Long = 4200L) {
+        val now = SystemClock.uptimeMillis()
+        notifPreviewUntil = now + durationMs
+        // 预览也重置「到达时刻」，这样进场快闪 + 慢呼吸两段都能看到
+        if (notifSinceMs <= 0L) notifSinceMs = now
+        ModuleLog.i("预览提醒效果: ${durationMs}ms")
+        invalidateAll()
+    }
+
+    /**
+     * 点击挖孔（或电量跨过节点）后短暂显示具体电量数字。
+     *
+     * 时长默认取配置项 [RingConfig.tapPercentDurationMs]，并夹到合法范围，
+     * 配置写入异常值时也不会出现「一闪而过」或「一直不消失」。
+     */
+    fun flashPercent(durationMs: Long = config.tapPercentDurationMs.toLong()) {
+        val d = durationMs.coerceIn(
+            RingConfig.TAP_DURATION_MIN_MS.toLong(),
+            RingConfig.TAP_DURATION_MAX_MS.toLong(),
+        )
+        percentFlashUntil = SystemClock.uptimeMillis() + d
+        invalidateAll()
+    }
+
+    /**
+     * 是否需要逐帧连续重绘：呼吸光晕、提醒闪烁、百分比淡出都是时间驱动的
+     * 动画，静止画面不会自己重绘，必须由绘制入口自续帧。全部关闭或不在
+     * 生效状态时返回 false，避免常态 60fps 空转。
+     */
+    fun needsContinuousAnimation(c: RingConfig): Boolean {
+        if (!c.ringEnabled) return false
+        // 息屏时环整体不绘制，无需任何帧
+        if (!screenOn) return false
+        if (SystemClock.uptimeMillis() < percentFlashUntil) return true
+        if (notifBlinkActive(c)) return true
+        if (c.musicPulseEnabled && musicPulsing) return true
+        // 音频驱动：实时音量/类型在变，需要持续产帧（哪怕系统侧检测到「没在放音乐」）
+        if (c.musicPulseEnabled && c.musicAudioReactive &&
+            (audioLevel > 0.01f || audioKind != 0)
+        ) {
+            return true
+        }
+        // 提醒 / 音乐律动淡入淡出还在过渡中：必须继续产帧
+        if (effectTransitioning(c)) return true
+        val chargingNow = batteryPalette.chargingNow || charging
+        // 低电量迪迦计时器：脉冲是时间驱动的，必须逐帧重绘
+        if (tigaActive(c, chargingNow)) return true
+        // 充电动画（非「进度弧」）是持续环绕的，必须逐帧重绘
+        if (chargingNow && c.chargingStyle != RingConfig.CHARGING_STYLE_PROGRESS) return true
+        if (c.breathingEnabled && (chargingNow || c.breathingOnIdle)) return true
+        return false
     }
 
     /**
@@ -305,6 +842,60 @@ object RingState {
     }
 
     /**
+     * 控制中心 / 通知面板展开状态（由 ShadeCollapseHook 驱动）。
+     *
+     * 展开时：环收起（它层带比面板高，不收起来会压在控制中心上），同时把状态栏
+     * 原生电池图标交还系统，让控制中心里显示正常的电量效果；面板收起后自动恢复。
+     * 是否生效由 [RingConfig.hideInShade] 控制，关闭时本状态不产生任何影响。
+     */
+    fun setShadeExpanded(expanded: Boolean) {
+        if (shadeExpanded == expanded) return
+        shadeExpanded = expanded
+        ModuleLog.i("通知中心展开状态: expanded=$expanded 收起目标=${collapseTarget()}")
+        animateCollapseTo(collapseTarget())
+        invalidateAll()
+        try {
+            onShadeExpandedChanged?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("通知中心展开回调异常", t)
+        }
+    }
+
+    /**
+     * 控制中心（右侧 QS 面板）显示状态（由 ShadeCollapseHook 驱动）。
+     *
+     * 与 [setShadeExpanded] 完全同构：面板展开时环收起并把状态栏原生电池图标
+     * 交还系统，面板收起后自动恢复；是否生效由 [RingConfig.hideInControlCenter] 控制。
+     */
+    fun setControlCenterShowing(showing: Boolean) {
+        if (controlCenterShowing == showing) return
+        controlCenterShowing = showing
+        ModuleLog.i("控制中心显示状态: showing=$showing 收起目标=${collapseTarget()}")
+        animateCollapseTo(collapseTarget())
+        invalidateAll()
+        try {
+            onShadeExpandedChanged?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("控制中心显示回调异常", t)
+        }
+    }
+
+    /**
+     * 低电量「迪迦计时器」是否生效：开关开、未充电、电量不高于阈值。
+     * 渲染与帧调度共用同一判据，避免两处口径漂移。
+     */
+    fun tigaActive(
+        c: RingConfig = config,
+        chargingNow: Boolean = batteryPalette.chargingNow || charging,
+    ): Boolean {
+        if (!c.lowBatteryTigaEnabled || chargingNow) return false
+        val thr = c.lowBatteryTigaThreshold.coerceIn(
+            RingConfig.TIGA_THRESHOLD_MIN, RingConfig.TIGA_THRESHOLD_MAX,
+        )
+        return level <= thr
+    }
+
+    /**
      * 灵动岛（超级岛）是否正在显示。
      *
      * 与沉浸收起共用同一条 collapseProgress 动画通道：任一条件成立即收缩到 1f，
@@ -317,45 +908,6 @@ object RingState {
         ModuleLog.i("灵动岛显示状态: showing=$showing 沉浸=$statusBarCollapsed 收起目标=$target")
         animateCollapseTo(target)
         applyIslandColorFreeze()
-    }
-
-    /**
-     * 面板（通知栏/控制中心）展开状态，0f 收起 / 1f 展开 —— 当前只会是这两个值。
-     *
-     * 由 ShadeCollapseHook 在 SystemUI 主线程调用，取两路布尔"求或"后的值：通知面板走
-     * `NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(Boolean)`，控制中心走
-     * `ControlCenterExpandControllerDelegate.onVisibleChanged(Z)`（真机取证 2026-10-03：
-     * 前者名字带 "Qs" 却根本不覆盖控制中心，故必须两路并见）。所以本通路是"面板展开即
-     * 收起、收起即弹回"，不是跟随手指进度 —— 观感仍不是硬闪：0f↔1f 跳变走
-     * [animateCollapseTo] 的 260ms `DecelerateInterpolator` 动画。
-     *
-     * fraction 形参保留：将来确认到可回落的连续进度信号后复用同一条通路，无需再改签名。
-     * 变化小于阈值时忽略（[RingCollapseLogic.shouldEmit]），省掉重复驱动。
-     */
-    fun setShadeCollapse(fraction: Float) {
-        val clamped = fraction.coerceIn(0f, 1f)
-        if (!RingCollapseLogic.shouldEmit(shadeCollapseFraction, clamped)) return
-        shadeCollapseFraction = clamped
-        val target = collapseTarget()
-        ModuleLog.i("面板收起状态: fraction=$clamped 收起目标=$target")
-        animateCollapseTo(target)
-    }
-
-    /**
-     * 「下拉面板收起」开关热翻转后的清理（见 [onShadeCollapseToggled]）。
-     * 关闭方向：丢弃开关关闭期间无门控保护留下的残留 fraction；
-     * 开启方向：让驱动侧清掉同值去重缓存并按系统当前展开态补一次真实同步。
-     * 随后的 [animateCollapseTo] 由调用方统一发起。
-     */
-    private fun resetShadeCollapseForToggle() {
-        shadeCollapseFraction = 0f
-        if (config.collapseOnShade) {
-            try {
-                onShadeCollapseToggled?.invoke()
-            } catch (t: Throwable) {
-                ModuleLog.e("下拉收起开关回调异常", t)
-            }
-        }
     }
 
     /**
@@ -398,36 +950,160 @@ object RingState {
         }
     }
 
-    /** 三条收起通路合并成一个目标值：沉浸收起、灵动岛显示、面板拉起，取最强者。 */
-    private fun collapseTarget(): Float = RingCollapseLogic.target(
-        statusBarCollapsed = statusBarCollapsed,
-        collapseOnImmersive = config.collapseOnImmersive,
-        islandShowing = islandShowing,
-        collapseOnIsland = config.collapseOnIsland,
-        shadeFraction = shadeCollapseFraction,
-        collapseOnShade = config.collapseOnShade,
-    )
+    /**
+     * 三条收起输入的统一自愈复位（2026-10-03 事故根治手段之一）。
+     *
+     * 三个探针都是「事件驱动」的：一旦某条通道给出一次假信号、而对应的
+     * 「还原」事件没有到达（锁屏 / 开机 / 过渡态最容易发生），环就会被永久
+     * 收缩成不可见。这里在「屏幕点亮」与「解锁完成」两个稳定的
+     * 「此刻不可能有面板展开 / 沉浸收起」的时刻，把所有输入强制拉回未收起，
+     * 让画面必定恢复；随后各探针的下一次真实事件会重新对齐。
+     *
+     * 与各探针的配合：探针改为读 [statusBarCollapsedNow] / [shadeExpandedNow] /
+     * [islandShowing] 做去重，因此本方法复位后探针仍能再次驱动同一取值。
+     */
+    fun resetCollapseInputs(reason: String) {
+        // 三条输入都为假、且画面本来就没有收缩时才无事可做；
+        // 收缩进度残留（动画被打断 / 假值已清但画面没跟上）也必须纠正。
+        if (!statusBarCollapsed && !islandShowing && !shadeExpanded && !controlCenterShowing &&
+            kotlin.math.abs(collapseProgress) < 0.01f
+        ) {
+            return
+        }
+        ModuleLog.i(
+            "收起状态自愈复位（$reason）: 沉浸=$statusBarCollapsed 岛=$islandShowing " +
+                "通知中心=$shadeExpanded 控制中心=$controlCenterShowing",
+        )
+        statusBarCollapsed = false
+        islandShowing = false
+        shadeExpanded = false
+        controlCenterShowing = false
+        animateCollapseTo(collapseTarget())
+        applyIslandColorFreeze()
+        invalidateAll()
+        try {
+            onShadeExpandedChanged?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("收起自愈回调异常", t)
+        }
+    }
+
+    /**
+     * 「收起沉降窗口」截止时刻（uptimeMillis）。
+     *
+     * 为什么需要它（2026-10-03 用户反馈「解锁进桌面后要过一会儿才有环」）：
+     * 解锁动画本身会让系统连着发好几个窗口/面板状态回调，其中夹杂**过渡态**的
+     * 假 true（面板瞬间被判定展开、状态栏窗口瞬间 HIDDEN）。探针即使有 1s 轮询，
+     * 也要等 1–3 秒才把它纠回来 —— 用户看到的就是「进桌面半天没环，过一会儿才冒出来」。
+     *
+     * 解锁/亮屏后的极短时间里，用户**不可能**真的在拉控制中心或看全屏视频，
+     * 因此窗口内直接判定「没有任何收起」：环立刻回到完整显示，探针随后的真实
+     * 事件仍能正常驱动（窗口只持续几百毫秒到 1.6 秒）。
+     */
+    @Volatile
+    private var settleUntilMs: Long = 0L
+
+    /**
+     * 进入收起沉降窗口：窗口内 [collapseTarget] 一律返回 0（不收起），
+     * 并立刻把画面拉回完整显示，保证「解锁完成 → 环马上就在」。
+     */
+    fun beginSettleWindow(durationMs: Long) {
+        val now = SystemClock.uptimeMillis()
+        val until = now + durationMs
+        if (until > settleUntilMs) settleUntilMs = until
+        // v1.3.3：解锁完成时同步一次锁屏状态（此刻锁屏已离开，立即让环回来）。
+        // 放在复位之前，避免「锁屏隐藏」残留 true 把环多压一会儿。
+        syncLockScreenState()
+        statusBarCollapsed = false
+        islandShowing = false
+        shadeExpanded = false
+        controlCenterShowing = false
+        cancelCollapseAnimator()
+        // 用目标值定进度：常规解锁 → 0（环立刻回来）；万一仍处锁屏隐藏 → 1（保持收起）
+        collapseProgress = collapseTarget()
+        ModuleLog.i("收起沉降窗口开始: ${durationMs}ms（其间忽略全部收起信号，环保持完整显示）")
+        invalidateAll()
+        applyIslandColorFreeze()
+        try {
+            onShadeExpandedChanged?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("收起沉降窗口回调异常", t)
+        }
+    }
+
+    /** 当前是否处于收起沉降窗口内。 */
+    private fun inSettleWindow(): Boolean = SystemClock.uptimeMillis() < settleUntilMs
+
+    /**
+     * 五条收起通路合并成一个目标值：沉浸收起、灵动岛显示、通知中心展开、
+     * 控制中心展开、锁屏隐藏，任一命中即收缩。各开关互不影响，各自控制自己的场景。
+     */
+    private fun collapseTarget(): Float {
+        val c = config
+        // v1.3.3：锁屏隐藏圆环不受沉降窗口影响——锁屏上就是要立刻收起，
+        // 否则「亮屏 → 1.6s 沉降窗口」会让环在锁屏上闪一下再消失。
+        val byLockScreen = lockScreenShowing && c.hideRingOnLockScreen
+        // 解锁/亮屏后的沉降窗口内一律不收起：治「进桌面后要等一会儿才有环」
+        if (inSettleWindow() && !byLockScreen) return 0f
+        val byImmersive = statusBarCollapsed && c.collapseOnImmersive
+        val byIsland = islandShowing && c.collapseOnIsland
+        val byShade = shadeExpanded && c.hideInShade
+        val byControlCenter = controlCenterShowing && c.hideInControlCenter
+        return if (byImmersive || byIsland || byShade || byControlCenter || byLockScreen) 1f else 0f
+    }
 
     /** 「取消旧动画→立即到位或平滑过渡」。 */
     private fun animateCollapseTo(target: Float) {
         val start = collapseProgress
-        collapseAnimator?.let { if (it.isRunning) it.cancel() }
-        // 三个收起开关都关掉时压根不需要播动画，直接到位
+        cancelCollapseAnimator()
+        // 全部收起开关都关掉时压根不需要播动画，直接到位
+        // （v1.2.0 修正：原先漏了 hideInControlCenter，只开「控制中心里隐藏」时
+        //  会跳过动画、硬切上/下场，就是用户说的「控制中心太突兀」）
         val noCollapseFeature = !config.collapseOnImmersive && !config.collapseOnIsland &&
-            !config.collapseOnShade
+            !config.hideInShade && !config.hideInControlCenter && !config.hideRingOnLockScreen
         if (noCollapseFeature || kotlin.math.abs(target - start) < 0.01f) {
+            val changed = kotlin.math.abs(target - start) >= 0.01f
             collapseProgress = target
             invalidateAll()
+            // 只在实际到位时通知一次，避免配置刷新等无变化路径反复踢电池侧
+            if (changed) notifyCollapseSettled()
             return
         }
+        // v1.3.2：环「回场」（收起进度从大变小）时先等一会儿，让原生电池图标
+        // 淡出跑完，两者错开就不会在屏幕上同框。
+        val returning = target < start - 0.01f
         collapseAnimator = ValueAnimator.ofFloat(start, target).apply {
             duration = COLLAPSE_DURATION_MS
             interpolator = collapseInterpolator
+            startDelay = if (returning && start > 0.5f) COLLAPSE_RETURN_DELAY_MS else 0L
             addUpdateListener {
                 collapseProgress = it.animatedValue as Float
                 invalidateAll()
             }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (animation === collapseAnimator) collapseAnimator = null
+                    if (collapseProgress >= 0.985f || collapseProgress <= 0.015f) {
+                        notifyCollapseSettled()
+                    }
+                }
+            })
         }.also { it.start() }
+    }
+
+    /**
+     * 干掉在飞的收起/回场动画并丢掉引用。
+     *
+     * 必须无条件 `cancel()`，**不能用 `isRunning` 当门槛**：回场动画带
+     * [COLLAPSE_RETURN_DELAY_MS] 的 `startDelay`，而 `ValueAnimator.isRunning()`
+     * 在整个延迟期都是 false（要等延迟结束进 `startAnimation()` 才置真）。按
+     * isRunning 判断就会把还在延迟里的动画漏掉，于是它变成孤儿：稍后延迟到点照样
+     * 回调 updateListener，把 `collapseProgress` 写回它自己的旧值区间，盖掉新动画
+     * 的结果。2026-10-04 用户反馈「岛收起后环回场会闪一下才正常显示」即此。
+     */
+    private fun cancelCollapseAnimator() {
+        collapseAnimator?.let { runCatching { it.cancel() } }
+        collapseAnimator = null
     }
 
     /** 挖孔几何首次解析成功的回调（由隐藏 Hook 注册，用于时序补偿）。 */
@@ -443,24 +1119,31 @@ object RingState {
     var onCutoutFrame: (() -> Unit)? = null
 
     /**
-     * 「下拉面板收起」开关翻转的回调（主线程，配置签名分支内触发）。
-     *
-     * 为什么需要：该通路的驱动侧（ShadeCollapseHook）在开关关闭时只做取证、
-     * 不写 fraction，于是留下两处残留 —— 关闭期间面板展开着切进来会把系统
-     * 当前的展开态当成 fraction=1f 冻在状态里（开关一开环就无端收起，
-     * 且面板随后收起时不再驱动、环收不回）；驱动侧自己的同值去重缓存也会
-     * 停在旧值，让开关后第一次真实变化被当成重复值跳过（环不跟手）。
-     * 因此翻转时同时归零本地 fraction 并通知驱动侧清缓存、重新同步真实状态。
-     */
-    @Volatile
-    var onShadeCollapseToggled: (() -> Unit)? = null
-
-    /**
      * 屏幕方向变化回调。与 [onCutoutResolved] 同一模式：由 SystemUiHooks 接到
      * `BatteryHideHook.refreshAll()`，data 层不直接依赖 hook 层。
      */
     @Volatile
     var onOrientationChanged: (() -> Unit)? = null
+
+    /**
+     * 「让各收起探针立刻回读一次自己的实时信号」的请求。
+     *
+     * 由 SystemUiHooks 接到能实时回读系统值的探针（沉浸、灵动岛）的 `reconcile()`。
+     * 用在「屏幕点亮 / 解锁完成」这类稳定时刻：此刻不可能真有面板展开、也不可能真在
+     * 沉浸模式里，让探针把自己记录的值与系统实时值重新对齐一次，就能把锁屏 / 解锁过渡
+     * 期间残留的假值放掉（[resetCollapseInputs] 是强制清零，这里是**按实时值对齐**，
+     * 因此不会误伤「真的展开了」的场景）。
+     */
+    @Volatile
+    var onReconcileRequested: (() -> Unit)? = null
+
+    fun requestReconcile() {
+        try {
+            onReconcileRequested?.invoke()
+        } catch (t: Throwable) {
+            ModuleLog.e("收起状态复核回调异常", t)
+        }
+    }
 
     /** 由 BatteryObserver 在 ACTION_CONFIGURATION_CHANGED 时调用。 */
     fun notifyOrientationChanged() {
@@ -514,14 +1197,33 @@ object RingState {
     /**
      * 是否强制隐藏状态栏原电池图标：环开启 + 隐藏选项开启 + 挖孔确实存在，
      * 且当前不是横屏（横屏时环不可见，图标交还系统，见 [isLandscape]）。
+     *
+     * 控制中心 / 通知面板展开时同样交还图标：面板里要看得见正常电量，
+     * 此时环也已经收起，不存在重复显示。
      */
     fun shouldForceHideBattery(view: View?): Boolean {
         val c = config
-        return c.ringEnabled && c.hideBattery && cutoutEverResolved && !isLandscape(view)
+        val base = c.ringEnabled && c.hideBattery && cutoutEverResolved && !isLandscape(view)
+        if (!base) return false
+        // v1.3.2：只要环还没**完全收干净**，就一律继续藏着原生图标。
+        // 用户反馈「上划很慢（尤其最后一段）时环和电池同框」——根因是面板刚判定
+        // 展开、环还在退场（300ms）时，电池就已经淡入（260ms）。现在电池要等环
+        // 彻底不见才允许回来，退场这段时间它就是不给显。
+        if (collapseProgress < 0.985f) return true
+        // v1.3.3：锁屏隐藏圆环期间，环不可见 → 把原生电池图标交还系统，
+        // 否则锁屏上既没有环、又看不到电量（「保留原锁屏」的一部分）
+        if (lockScreenShowing && c.hideRingOnLockScreen) return false
+        // 环已收干净：面板/控制中心展开时把图标交还系统（面板里要看得见正常电量）
+        if (shadeExpanded && c.hideInShade) return false
+        if (controlCenterShowing && c.hideInControlCenter) return false
+        return true
     }
 
     // ---- 绘制入口（由 Hook 在 DisplayCutoutBaseView.onDraw 后调用） ----
 
+    /**
+     * 绘制入口（环窗口的唯一渲染通路；v1.2.0 起息屏注入视图已移除）。
+     */
     fun onCutoutDraw(view: View, canvas: Canvas) {
         val c = config
         attachCutoutView(view)
@@ -529,10 +1231,6 @@ object RingState {
         val sig = c.signature()
         if (sig != lastConfigSig) {
             lastConfigSig = sig
-            if (c.collapseOnShade != lastCollapseOnShade) {
-                lastCollapseOnShade = c.collapseOnShade
-                resetShadeCollapseForToggle()
-            }
             animateCollapseTo(collapseTarget())
             applyIslandColorFreeze()
             invalidateAll()
@@ -542,13 +1240,42 @@ object RingState {
         } catch (t: Throwable) {
             ModuleLog.e("环帧回调异常", t)
         }
-        if (!c.ringEnabled || !screenOn) return
+        if (!c.ringEnabled) return
+        if (!screenOn) return
         try {
             RingRenderer.draw(view, canvas, c, this)
         } catch (t: Throwable) {
             // 绘制异常绝不能影响系统挖孔本身的渲染
             ModuleLog.e("环形电量绘制异常", t)
         }
+        // 呼吸/闪烁/百分比淡出期间自续帧；全部静止时不发，避免常态空转
+        if (needsContinuousAnimation(c)) {
+            view.postInvalidateOnAnimation()
+        } else if (c.burnInProtection) {
+            // 静止画面下唯一需要唤醒的场景：防烧屏位移到下一格时重绘一次
+            scheduleBurnInShift(view)
+        }
+    }
+
+    /** 防烧屏位移调度：只在下一格边界唤醒一帧，不常驻帧循环。 */
+    @Volatile
+    private var burnInShiftScheduled = false
+
+    private fun scheduleBurnInShift(view: View) {
+        if (burnInShiftScheduled) return
+        burnInShiftScheduled = true
+        val period = RingRenderer.BURN_IN_SHIFT_PERIOD_MS
+        val delay = period - (SystemClock.uptimeMillis() % period) + 80L
+        view.postDelayed({
+            burnInShiftScheduled = false
+            invalidateAll()
+        }, delay)
+    }
+
+    /** 取一个已附加的环 View（点击命中判定用）；无则 null。 */
+    fun firstAttachedRingView(): View? {
+        val snapshot = synchronized(cutoutViews) { cutoutViews.toList() }
+        return snapshot.firstOrNull { it.isAttachedToWindow }
     }
 
     /** 请求所有挖孔 View 重绘（postInvalidate 可在任意线程调用）。 */

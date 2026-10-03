@@ -28,6 +28,16 @@ public final class XposedHelpers {
         return null;
     }
 
+    public static XC_MethodHook.Unhook findAndHookConstructor(
+            String className, ClassLoader classLoader, Object... parameterTypesAndCallback) {
+        return null;
+    }
+
+    public static XC_MethodHook.Unhook findAndHookConstructor(
+            Class<?> clazz, Object... parameterTypesAndCallback) {
+        return null;
+    }
+
     public static Method findMethodIfExists(
             Class<?> clazz, String methodName, Object... parameterTypes) {
         return null;
@@ -47,6 +57,18 @@ public final class XposedHelpers {
 
     public static float getFloatField(Object obj, String fieldName) {
         return 0f;
+    }
+
+    public static void setObjectField(Object obj, String fieldName, Object value) {
+    }
+
+    public static void setIntField(Object obj, String fieldName, int value) {
+    }
+
+    public static void setBooleanField(Object obj, String fieldName, boolean value) {
+    }
+
+    public static void setFloatField(Object obj, String fieldName, float value) {
     }
 
     public static Object callMethod(Object obj, String methodName, Object... args) {

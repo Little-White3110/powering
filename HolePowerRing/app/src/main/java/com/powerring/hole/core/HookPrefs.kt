@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import com.powerring.hole.ring.CustomColors
+import com.powerring.hole.ring.PercentNodes
 import com.powerring.hole.ring.RingConfig
 import com.powerring.hole.ring.RingState
 import com.powerring.hole.ring.StateColors
@@ -144,7 +145,6 @@ object HookPrefs {
                 values[RingConfig.KEY_COLLAPSE_ON_IMMERSIVE], d.collapseOnImmersive,
             ),
             collapseOnIsland = toBool(values[RingConfig.KEY_COLLAPSE_ON_ISLAND], d.collapseOnIsland),
-            collapseOnShade = toBool(values[RingConfig.KEY_COLLAPSE_ON_SHADE], d.collapseOnShade),
             hideOnScreenshot = toBool(
                 values[RingConfig.KEY_HIDE_ON_SCREENSHOT], d.hideOnScreenshot,
             ),
@@ -152,6 +152,10 @@ object HookPrefs {
                 values[RingConfig.KEY_RESTORE_BATTERY_ON_LANDSCAPE], d.restoreBatteryOnLandscape,
             ),
             strokeWidthDp = toFloat(values[RingConfig.KEY_STROKE_WIDTH], d.strokeWidthDp),
+            trackOpacityPercent = toInt(
+                values[RingConfig.KEY_TRACK_OPACITY], d.trackOpacityPercent,
+            ),
+            gapDp = toFloat(values[RingConfig.KEY_GAP_DP], d.gapDp),
             offsetXDp = toFloat(values[RingConfig.KEY_OFFSET_X], d.offsetXDp),
             offsetYDp = toFloat(values[RingConfig.KEY_OFFSET_Y], d.offsetYDp),
             scale = toFloat(values[RingConfig.KEY_SCALE], d.scale),
@@ -168,6 +172,111 @@ object HookPrefs {
             // 区间表是一条字符串；解析函数内部已对坏数据逐段降级，不会抛
             levelRanges = CustomColors.decodeRanges(
                 values[RingConfig.KEY_LEVEL_RANGES] as? String,
+            ),
+            breathingEnabled = toBool(values[RingConfig.KEY_BREATHING_ENABLED], d.breathingEnabled),
+            breathingOnIdle = toBool(values[RingConfig.KEY_BREATHING_ON_IDLE], d.breathingOnIdle),
+            blinkOnNotification = toBool(
+                values[RingConfig.KEY_BLINK_ON_NOTIFICATION], d.blinkOnNotification,
+            ),
+            blinkColorAlert = toInt(values[RingConfig.KEY_BLINK_COLOR_ALERT], d.blinkColorAlert),
+            blinkColorAlt = toInt(values[RingConfig.KEY_BLINK_COLOR_ALT], d.blinkColorAlt),
+            tapShowPercent = toBool(values[RingConfig.KEY_TAP_SHOW_PERCENT], d.tapShowPercent),
+            tapPercentDurationMs = toInt(
+                values[RingConfig.KEY_TAP_PERCENT_DURATION], d.tapPercentDurationMs,
+            ),
+            burnInProtection = toBool(values[RingConfig.KEY_BURN_IN_PROTECTION], d.burnInProtection),
+            maxBrightnessPercent = toInt(
+                values[RingConfig.KEY_MAX_BRIGHTNESS_PERCENT], d.maxBrightnessPercent,
+            ),
+            glowStrengthPercent = toInt(
+                values[RingConfig.KEY_GLOW_STRENGTH], d.glowStrengthPercent,
+            ),
+            chargingStyle = toInt(values[RingConfig.KEY_CHARGING_STYLE], d.chargingStyle),
+            chargingColor = toInt(values[RingConfig.KEY_CHARGING_COLOR], d.chargingColor),
+            chargingSpeedPercent = toInt(
+                values[RingConfig.KEY_CHARGING_SPEED], d.chargingSpeedPercent,
+            ),
+            chargingStrengthPercent = toInt(
+                values[RingConfig.KEY_CHARGING_STRENGTH], d.chargingStrengthPercent,
+            ),
+            chargingAnimMode = toInt(
+                values[RingConfig.KEY_CHARGING_ANIM_MODE], d.chargingAnimMode,
+            ),
+            chargingFullRingThreshold = toInt(
+                values[RingConfig.KEY_CHARGING_FULL_THRESHOLD], d.chargingFullRingThreshold,
+            ),
+            breathingStyle = toInt(values[RingConfig.KEY_BREATHING_STYLE], d.breathingStyle),
+            breathingColor = toInt(values[RingConfig.KEY_BREATHING_COLOR], d.breathingColor),
+            breathingSpeedPercent = toInt(
+                values[RingConfig.KEY_BREATHING_SPEED], d.breathingSpeedPercent,
+            ),
+            blinkStyle = toInt(values[RingConfig.KEY_BLINK_STYLE], d.blinkStyle),
+            blinkSpeedPercent = toInt(values[RingConfig.KEY_BLINK_SPEED], d.blinkSpeedPercent),
+            blinkStrengthPercent = toInt(
+                values[RingConfig.KEY_BLINK_STRENGTH], d.blinkStrengthPercent,
+            ),
+            blinkIntroEnabled = toBool(
+                values[RingConfig.KEY_BLINK_INTRO_ENABLED], d.blinkIntroEnabled,
+            ),
+            blinkIntroSeconds = toInt(
+                values[RingConfig.KEY_BLINK_INTRO_SECONDS], d.blinkIntroSeconds,
+            ),
+            blinkOnScreen = toBool(values[RingConfig.KEY_BLINK_ON_SCREEN], d.blinkOnScreen),
+            blinkNotifMode = toInt(
+                values[RingConfig.KEY_BLINK_NOTIF_MODE], d.blinkNotifMode,
+            ),
+            blinkNotifDurationSeconds = toInt(
+                values[RingConfig.KEY_BLINK_NOTIF_DURATION], d.blinkNotifDurationSeconds,
+            ),
+            hideRingOnLockScreen = toBool(
+                values[RingConfig.KEY_HIDE_RING_ON_LOCK_SCREEN], d.hideRingOnLockScreen,
+            ),
+            percentNodesEnabled = toBool(
+                values[RingConfig.KEY_PERCENT_NODES_ENABLED], d.percentNodesEnabled,
+            ),
+            // 节点表是一条字符串；解析函数内部对坏数据逐段降级，不会抛
+            percentNodes = PercentNodes.decode(
+                values[RingConfig.KEY_PERCENT_NODES] as? String,
+            ),
+            musicPulseEnabled = toBool(
+                values[RingConfig.KEY_MUSIC_PULSE_ENABLED], d.musicPulseEnabled,
+            ),
+            musicPulseStyle = toInt(values[RingConfig.KEY_MUSIC_PULSE_STYLE], d.musicPulseStyle),
+            musicCycleSeconds = toInt(
+                values[RingConfig.KEY_MUSIC_CYCLE_SECONDS], d.musicCycleSeconds,
+            ),
+            musicColorCycleEnabled = toBool(
+                values[RingConfig.KEY_MUSIC_COLOR_CYCLE], d.musicColorCycleEnabled,
+            ),
+            musicColor = toInt(values[RingConfig.KEY_MUSIC_COLOR], d.musicColor),
+            musicPulseStrengthPercent = toInt(
+                values[RingConfig.KEY_MUSIC_PULSE_STRENGTH], d.musicPulseStrengthPercent,
+            ),
+            musicFlashRangePercent = toInt(
+                values[RingConfig.KEY_MUSIC_FLASH_RANGE], d.musicFlashRangePercent,
+            ),
+            musicBeatBpm = toInt(values[RingConfig.KEY_MUSIC_BEAT_BPM], d.musicBeatBpm),
+            musicAudioReactive = toBool(
+                values[RingConfig.KEY_MUSIC_AUDIO_REACTIVE], d.musicAudioReactive,
+            ),
+            musicReactSource = toInt(
+                values[RingConfig.KEY_MUSIC_REACT_SOURCE], d.musicReactSource,
+            ),
+            musicAudioSensitivityPercent = toInt(
+                values[RingConfig.KEY_MUSIC_AUDIO_SENS], d.musicAudioSensitivityPercent,
+            ),
+            hideInShade = toBool(values[RingConfig.KEY_HIDE_IN_SHADE], d.hideInShade),
+            hideInControlCenter = toBool(
+                values[RingConfig.KEY_HIDE_IN_CONTROL_CENTER], d.hideInControlCenter,
+            ),
+            lowBatteryTigaEnabled = toBool(
+                values[RingConfig.KEY_LOW_BATTERY_TIGA], d.lowBatteryTigaEnabled,
+            ),
+            lowBatteryTigaThreshold = toInt(
+                values[RingConfig.KEY_LOW_BATTERY_TIGA_THRESHOLD], d.lowBatteryTigaThreshold,
+            ),
+            lowBatteryTigaSpeedPercent = toInt(
+                values[RingConfig.KEY_LOW_BATTERY_TIGA_SPEED], d.lowBatteryTigaSpeedPercent,
             ),
         )
         ModuleLog.i("配置已重新加载: $cached")
