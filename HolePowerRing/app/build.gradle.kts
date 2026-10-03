@@ -13,8 +13,8 @@ plugins {
 fun gradleProp(name: String): String? =
     (project.findProperty(name) as String?)?.trim()?.takeIf { it.isNotEmpty() }
 
-val DEFAULT_VERSION_CODE = 1
-val DEFAULT_VERSION_NAME = "1.0.0"
+val DEFAULT_VERSION_CODE = 1001000
+val DEFAULT_VERSION_NAME = "1.1.0"
 
 val appVersionCode: Int = gradleProp("versionCode")?.let {
     val code = it.toIntOrNull()

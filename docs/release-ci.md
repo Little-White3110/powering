@@ -28,6 +28,18 @@ versionCode = major × 1000000 + minor × 1000 + patch
 
 `versionCode` 与 `versionName` 的默认值写在 [`app/build.gradle.kts`](../HolePowerRing/app/build.gradle.kts)，`-PversionName=` / `-PversionCode=` 未传时使用默认值，所以本地构建行为不变。注意 Android 要求升级安装时 `versionCode` 必须递增，**同一版本号的预发布与正式版共用同一个 versionCode**（比如 `v1.2.3-beta.1` → `v1.2.3`），正式版用户仍需先卸载 beta 版才能装上。
 
+## 发版一次要做什么
+
+发版本身只需推 tag，但默认值与文档要一并回填，避免「本地包显示 1.0.0、线上已是 1.1.0」这类错位：
+
+1. 改 `app/build.gradle.kts` 的 `DEFAULT_VERSION_NAME` / `DEFAULT_VERSION_CODE`（公式同上，如 `1.1.0` → `1001000`）
+2. README「更新日志」补一节，并同步「功能」「已知限制」等描述；`AGENTS.md` 里的当前版本号口径
+3. 提交并推 `main`，让 PR 校验或本地 `./gradlew test` 先过一遍
+4. `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z` → Release 流水线自动跑
+5. `gh run watch` 盯到出 Release；核对资产 `HolePowerRing-vX.Y.Z.apk` 与 `SHA256SUMS.txt`、以及构建日志里**有没有「使用 debug 签名」的 warning**（见下）
+
+已发版本：`v0.1.0`（2026-10-02）、`v1.1.0`（2026-10-04）。
+
 ## 一次性配置：发布密钥
 
 模块的 Release 必须签名才能安装（APK 默认不走 debug 签名）。密钥**不入库**，通过 GitHub Secrets 传给 CI。

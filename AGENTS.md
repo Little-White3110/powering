@@ -40,6 +40,10 @@ cd HolePowerRing
 
 因此**发版不需要改 `build.gradle.kts` 里的版本号**——CI 从 tag 解析 `versionName`，按 `major×1000000 + minor×1000 + patch` 算出 `versionCode`，用 `-PversionName=` / `-PversionCode=` 注入。默认值仍写在 `app/build.gradle.kts`，本地构建行为不变。
 
+> `DEFAULT_VERSION_NAME` / `DEFAULT_VERSION_CODE` 只作用于本地不带 `-P` 的构建（以及设置页「关于」显示的版本号），惯例是**发版后回填成与最近一次 tag 一致的值**。当前：`1.1.0` / `1001000`（v1.1.0，2026-10-04）。
+>
+> **版本号口径**：PR #1 由贡献者侧按 v1.3.x 编号，代码注释与文档里出现的 `v1.3.x` 指的是**该 PR 内的功能批次**，不是本仓库的发布 tag。本仓库发布线：v0.1.0 → v1.1.0。
+
 签名约定：release 包不签名无法安装。密钥以 `RELEASE_*` 环境变量传入（CI 来自 GitHub Secrets），**缺失时回落 debug 签名并打印警告而不是直接失败**——新增签名相关配置时保持这个回落行为。
 
 仓库**没有真机自动化测试**，验证仍需真机：安装 APK → LSPosed 管理器启用模块 → 重启 SystemUI（`adb shell killall com.android.systemui`）→ 观察日志与界面。配置改动必须重启 SystemUI 才生效（配置在 SystemUI 进程内只读加载）。
@@ -101,7 +105,8 @@ python xref.py              # 交叉引用分析
 - **截图时隐藏电量环：已确认（2026-10-03，真机验证通过）**。设置键 `hide_on_screenshot`（默认开，热生效）。本机真实截图引擎是独立进程 `com.miui.screenshot`（SystemUI 内 AOSP 管线休眠），FLAG_SECURE 会被特权截图绕过（`fl=` 含 SECURE 仍被采到）；主效机制为反射 `Transaction.setSkipScreenshot`（SF 层硬排除，录屏/投屏同样覆盖），灭屏/旋转后由 `RingState.onCutoutFrame` 每帧按 layer 身份自愈。`captureDisplay` Hook 保留给走 AOSP 管线的 ROM。三层机制与迭代证据见可行性分析报告 §17。**注**：环窗口现已**不带** `FLAG_SECURE`（2026-10-03 移除，它对本机无用；原 `applyScreenshotHide`/`onConfigApplied` 通路一并删除，开关只剩 SF 层调用），别把它当截图隐藏的一环再加回去，原因见 §19。换机型须先确认真实截图引擎（报告 §17.1 方法）
 - **下拉通知栏/控制中心收起电量环：已确认（2026-10-03 原实现，2026-10-04 合并 PR #1 后复验通过）**。设置键已改为 `hide_in_shade`（通知中心）与 `hide_in_control_center`（控制中心）**两个独立开关，默认开**，热生效；原 `collapse_on_shade`（默认关）随合并被删除，旧勾选不迁移。本机通知面板与控制中心是**两套独立管线**，信号源不变：通知走 `NotificationShadeWindowControllerImpl.onShadeOrQsExpanded(java.lang.Boolean)`（名字带 "Qs" 却**不覆盖控制中心**），控制中心走 `ControlCenterExpandControllerDelegate.onVisibleChanged(boolean)`（成对派发）。两路各驱各的 `RingState.setShadeExpanded(Boolean)` / `setControlCenterShowing(Boolean)`，**不再有中间 fraction 合并与开关门控**（setter 自身按值去重），收起与否由 `collapseTarget()` 里「状态 && 对应开关」决定；动画 300ms（原写 260ms）。面板展开时经 `onShadeExpandedChanged` 把原生电池图标交还系统。行为仍是布尔（展开即收、收起即弹回），非跟随手指——`onExpansionChanged(float)` 能给 fraction 但收起回落两轮未证实、有卡死风险，弃用；PR 侧曾用 `ShadeControllerImpl` + 反射 `NotificationPanelViewController.mExpandedFraction` 驱动，与弃用的 fraction 路线同源且未经真机验证，合并时已删。`ShadeExpansionStateManager.onPanelExpansionChanged(FZZ)` 与 `NotificationShadeWrapper.onPanelExpanded(Z)` 真机证伪后删除。换机型须先分别确认通知与控制中心的真实展开信号是否同路。见可行性分析报告 §18.3、§20.1
 - **点按劫持防护全局拦截：已确认（2026-10-03，真机验证通过）**。开环后任意位置点按被拦，根因是环窗口是全列表里唯一「`frame` 在屏幕内却没有 `TRUSTED_OVERLAY`」的窗口。修复：`RingWindowController.applyTrustedOverlayFlag` 在 `addView` 前反射调用框架自带的 `LayoutParams.setTrustedOverlay()`（旧 ROM 回落 `privateFlags |= 0x20000000`），**无需改窗口类型**，§11 层带结论原样保住。两条已证伪的假设不要再查：`FLAG_NOT_TOUCHABLE` 挡不住劫持判定；`FLAG_SECURE` 不是成因（去掉后拦截照旧，它只因 §17.2 的截图原因被移除）。注意本机常量名是 `PRIVATE_FLAG_TRUSTED_OVERLAY`，AOSP 新版的 `SYSTEM_FLAG_TRUSTED_OVERLAY` 在本机不存在（实测 NoSuchFieldException）。换机型须先用 `dumpsys input` 核对 `inputConfig`。见可行性分析报告 §19
-- **PR #1（v1.3.3）已合并（2026-10-04，真机验证通过）**。带入音乐律动、消息提醒呼吸/闪烁、点击挖孔显电量、锁屏隐藏圆环、百分比数字节点，约 40 个新配置键；人脸解锁（`FaceUnlockHook`）由作者自行删净。**遗留三项**：① PR 新增配置键**零单测**，CI 的 `./gradlew test` 只跑既有测试；② `RECORD_AUDIO` + `microphone` 前台服务是模块首次申请敏感权限，README 与隐私说明尚未同步；③ 音乐律动与提醒闪烁的**主通道需用户授权**（通知使用权 / 麦克风运行时权限），未授权会退回反射兜底通道，而反射通道"posted 加、removed 减"，漏一次 removed 就永久卡在"有通知"状态。合并细节与两处硬伤见可行性分析报告 §20
+- **PR #1（v1.3.3）已合并（2026-10-04，真机验证通过）**。带入音乐律动、消息提醒呼吸/闪烁、点击挖孔显电量、锁屏隐藏圆环、百分比数字节点，约 40 个新配置键；人脸解锁（`FaceUnlockHook`）由作者自行删净。**遗留三项**：① PR 新增配置键**零单测**，CI 的 `./gradlew test` 只跑既有测试；② ~~`RECORD_AUDIO` + `microphone` 前台服务是模块首次申请敏感权限，README 与隐私说明尚未同步~~ **已处理**（v1.1.0 发版时给 README 补写「权限与隐私」与「更新日志」两节）；③ 音乐律动与提醒闪烁的**主通道需用户授权**（通知使用权 / 麦克风运行时权限），未授权会退回反射兜底通道，而反射通道"posted 加、removed 减"，漏一次 removed 就永久卡在"有通知"状态。合并细节与两处硬伤见可行性分析报告 §20
+- **v1.1.0 已发版（2026-10-04）**：PR #1 合并后的首个 tag，`versionCode = 1001000`。这是本仓库第一次**只靠推 tag + 回填默认值**走完整发版流程；下一次发版照此办理（改默认值 → 文档 → 打 tag）。
 
 ## 不要做的事
 
