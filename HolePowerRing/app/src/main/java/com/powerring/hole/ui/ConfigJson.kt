@@ -43,6 +43,7 @@ object ConfigJson {
             put("app", APP)
             put("stroke_width_dp", snapped(config.strokeWidthDp, 10f))
             put("ring_scale", snapped(config.scale, 100f))
+            put("hole_diameter_dp", snapped(config.holeDiameterDp, 10f))
             put("offset_x_dp", config.offsetXDp.roundToInt())
             put("offset_y_dp", config.offsetYDp.roundToInt())
             put("color_mode", config.colorMode)
@@ -109,6 +110,9 @@ object ConfigJson {
         }
         obj["ring_scale"]?.let {
             next = next.copy(scale = it.asBoundedFloat("环缩放", RingConfig.SCALE_MIN..RingConfig.SCALE_MAX, 100f))
+        }
+        obj["hole_diameter_dp"]?.let {
+            next = next.copy(holeDiameterDp = it.asBoundedFloat("手动孔径", RingConfig.HOLE_DIAMETER_MIN..RingConfig.HOLE_DIAMETER_MAX, 10f))
         }
         obj["offset_x_dp"]?.let {
             next = next.copy(offsetXDp = it.asBoundedFloat("水平偏移", RingConfig.OFFSET_MIN..RingConfig.OFFSET_MAX, 1f))

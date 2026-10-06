@@ -409,6 +409,7 @@ object RingState {
 
     private fun RingConfig.signature() =
         "$ringEnabled|$hideOnScreenshot|$strokeWidthDp|$gapDp|$offsetXDp|$offsetYDp|$scale|" +
+            "$holeDiameterDp|" +
             "$colorMode|$customColor|" +
             "$collapseOnImmersive|$collapseOnIsland|" +
             "${stateColors.normal},${stateColors.low},${stateColors.powerSave}," +

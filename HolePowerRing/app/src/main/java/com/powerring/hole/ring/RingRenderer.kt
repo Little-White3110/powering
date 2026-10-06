@@ -191,6 +191,10 @@ object RingRenderer {
     @Volatile
     private var clipRiskLogged = false
 
+    /** 半径钳制只在实际越界时打一次日志（钳制后每帧都越界，逐帧打会刷屏）。 */
+    @Volatile
+    private var clampLogged = false
+
     @Volatile
     private var diagLogged = false
 
@@ -221,7 +225,7 @@ object RingRenderer {
         // 缝隙感明显时往负调可以让环直接压到物理孔边缘
         val gap = config.gapDp.coerceIn(RingConfig.GAP_MIN, RingConfig.GAP_MAX) * density
 
-        val hole = CutoutGeometry.resolve(view, gap + stroke / 2f) ?: return
+        val hole = CutoutGeometry.resolve(view, gap + stroke / 2f, config) ?: return
         state.markCutoutResolved()
 
         if (hole.clipRisk && !clipRiskLogged) {
@@ -929,9 +933,22 @@ object RingRenderer {
         }
 
         // 用户手动微调：缩放（半径）+ 上下左右偏移
-        val baseRadius = (hole.holeRadius + gap + stroke / 2f) * config.scale
+        val baseRadiusRaw = (hole.holeRadius + gap + stroke / 2f) * config.scale
         val cxRaw = hole.cx + config.offsetXDp * density
         val cyRaw = hole.cy + config.offsetYDp * density
+        // 状态栏高度有限，大缩放/大偏移时环外缘可能整体出界被裁；仅越界时收敛，
+        // 钳制后环顶轻微贴孔是可接受退化（比被视图裁掉一段弧好）
+        val baseRadius = CutoutMath.clampRingRadius(
+            cxRaw, cyRaw, view.width.toFloat(), view.height.toFloat(),
+            baseRadiusRaw, stroke, hole.holeRadius,
+        )
+        if (baseRadius != baseRadiusRaw && !clampLogged) {
+            clampLogged = true
+            ModuleLog.i(
+                "环半径越界收敛: $baseRadiusRaw -> $baseRadius " +
+                    "(cx=$cxRaw cy=$cyRaw view=${view.width}x${view.height} stroke=$stroke holeR=${hole.holeRadius})",
+            )
+        }
         val baseRingRadius = baseRadius * expand
 
         // 防烧屏：位移 + 亮度上限。位移走九宫格慢速路径，亮度上限压住高亮白/

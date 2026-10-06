@@ -63,6 +63,7 @@ class ConfigProvider : ContentProvider() {
         RingConfig.KEY_OFFSET_X -> prefs.getFloat(key, RingConfig.DEFAULT.offsetXDp)
         RingConfig.KEY_OFFSET_Y -> prefs.getFloat(key, RingConfig.DEFAULT.offsetYDp)
         RingConfig.KEY_SCALE -> prefs.getFloat(key, RingConfig.DEFAULT.scale)
+        RingConfig.KEY_HOLE_DIAMETER -> prefs.getFloat(key, RingConfig.DEFAULT.holeDiameterDp)
         RingConfig.KEY_CUSTOM_COLOR -> prefs.getInt(key, RingConfig.DEFAULT.customColor)
         RingConfig.KEY_COLOR_MODE -> PrefsStore.resolveColorMode(prefs)
         RingConfig.KEY_STATE_COLOR_NORMAL -> prefs.getInt(key, 0)
@@ -182,6 +183,7 @@ class ConfigProvider : ContentProvider() {
             RingConfig.KEY_OFFSET_X,
             RingConfig.KEY_OFFSET_Y,
             RingConfig.KEY_SCALE,
+            RingConfig.KEY_HOLE_DIAMETER,
             RingConfig.KEY_USE_CUSTOM_COLOR,
             RingConfig.KEY_CUSTOM_COLOR,
             RingConfig.KEY_COLOR_MODE,

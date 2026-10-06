@@ -1362,6 +1362,21 @@ private fun AppearanceTabContent(
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     ConfigSlider(
+                        title = "手动孔径",
+                        summary = "自动定位失败时手动指定挖孔直径；0 = 自动按系统挖孔信息定位。" +
+                            "圆心默认水平居中、略低于孔顶，再用下方偏移微调",
+                        value = config.holeDiameterDp,
+                        valueRange = RingConfig.HOLE_DIAMETER_MIN..RingConfig.HOLE_DIAMETER_MAX,
+                        valueText = if (config.holeDiameterDp == 0f) "自动" else String.format("%.1f dp", config.holeDiameterDp),
+                        enabled = config.ringEnabled,
+                        transform = { (it * 10).roundToInt() / 10f },
+                        onChange = { update(config.copy(holeDiameterDp = it)) },
+                        onCommit = {
+                            PrefsStore.setFloat(ctx, RingConfig.KEY_HOLE_DIAMETER, it)
+                        },
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    ConfigSlider(
                         title = "水平偏移",
                         summary = "正值向右，负值向左（约 1dp≈3px）",
                         value = config.offsetXDp,

@@ -20,6 +20,36 @@ import com.powerring.hole.core.ModuleLog
  */
 class PowerRingView(context: Context) : View(context) {
 
+    /**
+     * 挖孔定位重试：insets 晚到是常态（attach 时系统往往还没派发 display cutout），
+     * 按固定间隔重试，上限见 [RetryBudget]。重试期不绘制——resolve 返回 null 时
+     * 绘制路径直接 return，无需额外改动。
+     */
+    private val retryBudget = RetryBudget()
+
+    private val geometryRetry = object : Runnable {
+        override fun run() {
+            if (RingState.cutoutEverResolved) {
+                // 已解析成功：停止重试并归还额度（下次 attach / 新一轮失败从头计）。
+                // 成功停止不打日志，RingState.markCutoutResolved 已有对应日志兜底。
+                retryBudget.reset()
+                removeCallbacks(this)
+                return
+            }
+            // 每次重绘都会重走一次挖孔解析（解析失败不缓存）
+            postInvalidateOnAnimation()
+            if (retryBudget.tryConsume()) {
+                postDelayed(this, RetryBudget.INTERVAL_MS)
+            } else {
+                ModuleLog.i(
+                    "挖孔定位重试用尽（${RetryBudget.INTERVAL_MS}ms×${RetryBudget.MAX_ATTEMPTS}），" +
+                        "停止 until 窗口重建",
+                )
+                removeCallbacks(this)
+            }
+        }
+    }
+
     init {
         isClickable = false
         isFocusable = false
@@ -37,11 +67,16 @@ class PowerRingView(context: Context) : View(context) {
         RingState.attachCutoutView(this)
         requestApplyInsets()
         postInvalidateOnAnimation()
+        // 窗口（重）建：额度从头计，按固定间隔触发重绘驱动解析重试
+        retryBudget.reset()
+        removeCallbacks(geometryRetry)
+        postDelayed(geometryRetry, RetryBudget.INTERVAL_MS)
         ModuleLog.i("PowerRingView 已附加")
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        removeCallbacks(geometryRetry)
         RingState.detachCutoutView(this)
     }
 

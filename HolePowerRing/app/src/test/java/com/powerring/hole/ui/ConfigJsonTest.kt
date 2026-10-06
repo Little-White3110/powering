@@ -16,6 +16,7 @@ class ConfigJsonTest {
     private val sample = RingConfig(
         strokeWidthDp = 3.5f,
         scale = 1.23f,
+        holeDiameterDp = 22.5f,
         offsetXDp = -4f,
         offsetYDp = 6f,
         colorMode = RingConfig.MODE_LEVEL_RANGE,
@@ -43,6 +44,7 @@ class ConfigJsonTest {
         assertEquals("hole_power_ring", obj["app"]!!.jsonPrimitive.content)
         assertEquals("3.5", obj["stroke_width_dp"]!!.jsonPrimitive.content)
         assertEquals("1.23", obj["ring_scale"]!!.jsonPrimitive.content)
+        assertEquals("22.5", obj["hole_diameter_dp"]!!.jsonPrimitive.content)
         assertEquals("-4", obj["offset_x_dp"]!!.jsonPrimitive.content)
         assertEquals("6", obj["offset_y_dp"]!!.jsonPrimitive.content)
         assertEquals("3", obj["color_mode"]!!.jsonPrimitive.content)
@@ -95,6 +97,7 @@ class ConfigJsonTest {
     fun `out of range numbers fail`() {
         assertFalse(ConfigJson.runCatchingPatch(num("stroke_width_dp", 12), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("ring_scale", 0.5), RingConfig.DEFAULT).isSuccess)
+        assertFalse(ConfigJson.runCatchingPatch(num("hole_diameter_dp", 50), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("offset_x_dp", -25), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("color_mode", 4), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("color_mode", -1), RingConfig.DEFAULT).isSuccess)

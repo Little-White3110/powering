@@ -82,7 +82,7 @@ object CutoutTapHook {
     /** 屏幕坐标是否落在挖孔圆心附近（以环 View 的几何换算到屏幕坐标）。 */
     private fun hitCutout(screenX: Float, screenY: Float): Boolean {
         val view = RingState.firstAttachedRingView() ?: return false
-        val hole = runCatching { CutoutGeometry.resolve(view, 0f) }.getOrNull() ?: return false
+        val hole = runCatching { CutoutGeometry.resolve(view, 0f, RingState.config) }.getOrNull() ?: return false
         val loc = IntArray(2)
         runCatching { view.getLocationOnScreen(loc) }
         val cx = loc[0] + hole.cx

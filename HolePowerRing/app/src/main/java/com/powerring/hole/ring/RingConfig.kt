@@ -42,6 +42,12 @@ data class RingConfig(
     /** 环半径缩放，1.0 为默认，用于精确贴合挖孔 */
     val scale: Float = 1f,
     /**
+     * 手动指定挖孔直径（dp）；0 = 自动（按系统挖孔安全区定位）。
+     * 自动定位拿不到 insets 的机型用它兜底：圆心水平取视图居中、
+     * 垂直默认在 半径×1.15 处，再靠水平/垂直偏移微调。
+     */
+    val holeDiameterDp: Float = 0f,
+    /**
      * 遗留字段：旧版本的「自定义颜色」开关。现由 [colorMode] 取代，
      * 仅在 [colorMode] 尚未写入配置时用于推导模式（见 `PrefsStore.resolveColorMode`）。
      */
@@ -251,6 +257,7 @@ data class RingConfig(
         const val KEY_OFFSET_X = "offset_x_dp"
         const val KEY_OFFSET_Y = "offset_y_dp"
         const val KEY_SCALE = "ring_scale"
+        const val KEY_HOLE_DIAMETER = "hole_diameter_dp"
         const val KEY_USE_CUSTOM_COLOR = "use_custom_color"
         const val KEY_CUSTOM_COLOR = "custom_color_argb"
         const val KEY_COLOR_MODE = "color_mode"
@@ -330,6 +337,9 @@ data class RingConfig(
         const val OFFSET_MAX = 20f
         const val SCALE_MIN = 0.7f
         const val SCALE_MAX = 1.5f
+        // 手动孔径：0 = 自动（跟随系统挖孔安全区），上限 40dp 覆盖常见机型挖孔
+        const val HOLE_DIAMETER_MIN = 0f
+        const val HOLE_DIAMETER_MAX = 40f
 
         // 防烧屏亮度上限滑杆范围
         const val BRIGHTNESS_MIN = 30

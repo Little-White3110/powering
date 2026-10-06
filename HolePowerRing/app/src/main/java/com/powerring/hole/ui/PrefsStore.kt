@@ -39,6 +39,9 @@ object PrefsStore {
             offsetXDp = p.getFloat(RingConfig.KEY_OFFSET_X, 0f),
             offsetYDp = p.getFloat(RingConfig.KEY_OFFSET_Y, 0f),
             scale = p.getFloat(RingConfig.KEY_SCALE, 1f),
+            holeDiameterDp = p.getFloat(
+                RingConfig.KEY_HOLE_DIAMETER, RingConfig.DEFAULT.holeDiameterDp,
+            ),
             useCustomColor = p.getBoolean(RingConfig.KEY_USE_CUSTOM_COLOR, false),
             customColor = p.getInt(RingConfig.KEY_CUSTOM_COLOR, 0xFF277AF7.toInt()),
             colorMode = resolveColorMode(p),
@@ -159,6 +162,7 @@ object PrefsStore {
         prefs(context).edit()
             .putFloat(RingConfig.KEY_STROKE_WIDTH, config.strokeWidthDp)
             .putFloat(RingConfig.KEY_SCALE, config.scale)
+            .putFloat(RingConfig.KEY_HOLE_DIAMETER, config.holeDiameterDp)
             .putFloat(RingConfig.KEY_OFFSET_X, config.offsetXDp)
             .putFloat(RingConfig.KEY_OFFSET_Y, config.offsetYDp)
             .putInt(RingConfig.KEY_COLOR_MODE, config.colorMode)

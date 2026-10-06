@@ -159,6 +159,7 @@ object HookPrefs {
             offsetXDp = toFloat(values[RingConfig.KEY_OFFSET_X], d.offsetXDp),
             offsetYDp = toFloat(values[RingConfig.KEY_OFFSET_Y], d.offsetYDp),
             scale = toFloat(values[RingConfig.KEY_SCALE], d.scale),
+            holeDiameterDp = toFloat(values[RingConfig.KEY_HOLE_DIAMETER], d.holeDiameterDp),
             useCustomColor = toBool(values[RingConfig.KEY_USE_CUSTOM_COLOR], d.useCustomColor),
             customColor = toInt(values[RingConfig.KEY_CUSTOM_COLOR], d.customColor),
             colorMode = toInt(values[RingConfig.KEY_COLOR_MODE], d.colorMode),
