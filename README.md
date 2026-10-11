@@ -191,8 +191,9 @@ git push origin v1.2.3      # → 自动出包 + Release
 感谢所有为 HolePowerRing 做出贡献的朋友：
 
 <p align="center">
+  <a href="https://github.com/Little-White3110"><img src="https://avatars.githubusercontent.com/u/53994162?v=4&s=80" width="80" height="80" alt="Little-White3110" title="Little-White3110" /></a> 
   <a href="https://github.com/acxmy"><img src="https://avatars.githubusercontent.com/u/318193740?v=4&s=80" width="80" height="80" alt="acxmy" title="acxmy" /></a>
-  <a href="https://github.com/Little-White3110"><img src="https://avatars.githubusercontent.com/u/53994162?v=4&s=80" width="80" height="80" alt="Little-White3110" title="Little-White3110" /></a>
+  <a href="https://github.com/Kinaxie"><img src="https://avatars.githubusercontent.com/u/1234567890?v=4&s=80" width="80" height="80" alt="Kinaxie" title="Kinaxie" /></a>
 </p>
 
 ## 许可证
