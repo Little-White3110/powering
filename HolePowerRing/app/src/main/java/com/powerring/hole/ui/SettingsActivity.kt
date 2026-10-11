@@ -20,6 +20,8 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 「环缩放」已移除：老配置里的遗留值一次性归位，避免无 UI 的值继续隐形生效
+        PrefsStore.resetLegacyRingScale(this)
         setContent {
             // pagerState 提升到主题容器之外：整棵 UI 树重建组合时 Tab 位置不丢
             // 页数必须等于 SettingsScreen 里的 tabs 数量（基础/动效/外观/关于 = 4）。

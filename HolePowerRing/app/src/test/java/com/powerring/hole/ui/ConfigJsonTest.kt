@@ -15,10 +15,9 @@ class ConfigJsonTest {
 
     private val sample = RingConfig(
         strokeWidthDp = 3.5f,
-        scale = 1.23f,
         holeDiameterDp = 22.5f,
-        offsetXDp = -4f,
-        offsetYDp = 6f,
+        offsetXDp = -4.5f,
+        offsetYDp = 6.2f,
         colorMode = RingConfig.MODE_LEVEL_RANGE,
         customColor = 0x11AA22,
         stateColors = StateColors(
@@ -43,10 +42,11 @@ class ConfigJsonTest {
         assertEquals(1, obj["schema"]!!.jsonPrimitive.content.toInt())
         assertEquals("hole_power_ring", obj["app"]!!.jsonPrimitive.content)
         assertEquals("3.5", obj["stroke_width_dp"]!!.jsonPrimitive.content)
-        assertEquals("1.23", obj["ring_scale"]!!.jsonPrimitive.content)
         assertEquals("22.5", obj["hole_diameter_dp"]!!.jsonPrimitive.content)
-        assertEquals("-4", obj["offset_x_dp"]!!.jsonPrimitive.content)
-        assertEquals("6", obj["offset_y_dp"]!!.jsonPrimitive.content)
+        assertEquals("-4.5", obj["offset_x_dp"]!!.jsonPrimitive.content)
+        assertEquals("6.2", obj["offset_y_dp"]!!.jsonPrimitive.content)
+        // 「环缩放」已移除：导出里不再出现 ring_scale
+        assertFalse(obj.containsKey("ring_scale"))
         assertEquals("3", obj["color_mode"]!!.jsonPrimitive.content)
         assertEquals("0011AA22", obj["custom_color"]!!.jsonPrimitive.content)
 
@@ -70,18 +70,26 @@ class ConfigJsonTest {
     @Test
     fun `missing fields keep base values`() {
         val json = """{"schema":1,"app":"hole_power_ring","color_mode":1,"custom_color":"FF277AF7"}"""
-        val base = RingConfig(strokeWidthDp = 6.0f, scale = 1.4f)
+        val base = RingConfig(strokeWidthDp = 6.0f)
         val out = ConfigJson.applyPatch(json, base)
         assertEquals(1, out.colorMode)
         assertEquals(0xFF277AF7.toInt(), out.customColor)
         assertEquals(6.0f, out.strokeWidthDp, 0.0001f)
-        assertEquals(1.4f, out.scale, 0.0001f)
     }
 
     @Test
     fun `unknown fields are ignored`() {
         val json = """{"schema":1,"app":"hole_power_ring","future_key":"whatever","color_mode":2}"""
         assertEquals(2, ConfigJson.applyPatch(json, RingConfig.DEFAULT).colorMode)
+    }
+
+    @Test
+    fun `legacy ring_scale field is ignored on import`() {
+        // 老版本导出的外观 JSON 可能带 ring_scale；「环缩放」已移除，导入时应跳过
+        val json = """{"schema":1,"app":"hole_power_ring","ring_scale":1.3,"stroke_width_dp":4}"""
+        val out = ConfigJson.applyPatch(json, RingConfig.DEFAULT)
+        assertEquals(RingConfig.DEFAULT.scale, out.scale, 0.0001f)
+        assertEquals(4f, out.strokeWidthDp, 0.0001f)
     }
 
     @Test
@@ -96,9 +104,9 @@ class ConfigJsonTest {
     @Test
     fun `out of range numbers fail`() {
         assertFalse(ConfigJson.runCatchingPatch(num("stroke_width_dp", 12), RingConfig.DEFAULT).isSuccess)
-        assertFalse(ConfigJson.runCatchingPatch(num("ring_scale", 0.5), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("hole_diameter_dp", 50), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("offset_x_dp", -25), RingConfig.DEFAULT).isSuccess)
+        assertFalse(ConfigJson.runCatchingPatch(num("offset_x_dp", -25.4), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("color_mode", 4), RingConfig.DEFAULT).isSuccess)
         assertFalse(ConfigJson.runCatchingPatch(num("color_mode", -1), RingConfig.DEFAULT).isSuccess)
     }

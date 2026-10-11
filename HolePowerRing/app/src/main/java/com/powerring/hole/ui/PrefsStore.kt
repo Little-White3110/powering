@@ -161,7 +161,6 @@ object PrefsStore {
     fun applyAppearance(context: Context, config: RingConfig) {
         prefs(context).edit()
             .putFloat(RingConfig.KEY_STROKE_WIDTH, config.strokeWidthDp)
-            .putFloat(RingConfig.KEY_SCALE, config.scale)
             .putFloat(RingConfig.KEY_HOLE_DIAMETER, config.holeDiameterDp)
             .putFloat(RingConfig.KEY_OFFSET_X, config.offsetXDp)
             .putFloat(RingConfig.KEY_OFFSET_Y, config.offsetYDp)
@@ -187,6 +186,18 @@ object PrefsStore {
             prefs.getInt(RingConfig.KEY_COLOR_MODE, RingConfig.DEFAULT.colorMode)
         prefs.getBoolean(RingConfig.KEY_USE_CUSTOM_COLOR, false) -> RingConfig.MODE_FIXED_COLOR
         else -> RingConfig.MODE_FOLLOW_SYSTEM
+    }
+
+    /**
+     * 「环缩放」滑杆已从设置页移除（与「贴孔间隙」重叠）。老配置里若残留
+     * 非默认的 ring_scale，会在没有 UI 入口的情况下继续隐形生效；
+     * 进设置页时一次性归位默认值，之后用「贴孔间隙」重新校准贴合。
+     */
+    fun resetLegacyRingScale(context: Context) {
+        val current = prefs(context).getFloat(RingConfig.KEY_SCALE, RingConfig.DEFAULT.scale)
+        if (current != RingConfig.DEFAULT.scale) {
+            setFloat(context, RingConfig.KEY_SCALE, RingConfig.DEFAULT.scale)
+        }
     }
 
     private fun commit(context: Context) {

@@ -1,5 +1,10 @@
 # 外观配置 JSON 导入导出 实现计划
 
+> **⚠️ 状态更新（2026-10-11）**：本计划为历史实现记录，字段契约已有两处变化——
+> ① `ring_scale`（环缩放）随设置页该滑杆的移除而**退出契约**：导出不再包含、导入按「未知字段忽略」跳过（`schema` 不升级，双向兼容）；
+> ② `offset_x_dp` / `offset_y_dp` 由整数步进改为 **0.1dp 步进的 float**（`snapped(…, 10f)`）。
+> 以下正文按当时的契约书写，与现状不符处以本说明为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为外观页的全部设置项（几何微调 + 颜色四模式）提供 JSON 格式的导出（复制到剪贴板）与导入（粘贴他人 JSON 一次性覆盖）能力。

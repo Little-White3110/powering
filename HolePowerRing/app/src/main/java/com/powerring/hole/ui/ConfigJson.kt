@@ -42,10 +42,9 @@ object ConfigJson {
             put("schema", SCHEMA)
             put("app", APP)
             put("stroke_width_dp", snapped(config.strokeWidthDp, 10f))
-            put("ring_scale", snapped(config.scale, 100f))
             put("hole_diameter_dp", snapped(config.holeDiameterDp, 10f))
-            put("offset_x_dp", config.offsetXDp.roundToInt())
-            put("offset_y_dp", config.offsetYDp.roundToInt())
+            put("offset_x_dp", snapped(config.offsetXDp, 10f))
+            put("offset_y_dp", snapped(config.offsetYDp, 10f))
             put("color_mode", config.colorMode)
             put("custom_color", CustomColors.hex8(config.customColor))
             put(
@@ -108,17 +107,15 @@ object ConfigJson {
         obj["stroke_width_dp"]?.let {
             next = next.copy(strokeWidthDp = it.asBoundedFloat("环粗细", RingConfig.STROKE_MIN..RingConfig.STROKE_MAX, 10f))
         }
-        obj["ring_scale"]?.let {
-            next = next.copy(scale = it.asBoundedFloat("环缩放", RingConfig.SCALE_MIN..RingConfig.SCALE_MAX, 100f))
-        }
+        // ring_scale 已随「环缩放」滑杆移除；旧文件里的该字段按「未知字段忽略」跳过
         obj["hole_diameter_dp"]?.let {
             next = next.copy(holeDiameterDp = it.asBoundedFloat("手动孔径", RingConfig.HOLE_DIAMETER_MIN..RingConfig.HOLE_DIAMETER_MAX, 10f))
         }
         obj["offset_x_dp"]?.let {
-            next = next.copy(offsetXDp = it.asBoundedFloat("水平偏移", RingConfig.OFFSET_MIN..RingConfig.OFFSET_MAX, 1f))
+            next = next.copy(offsetXDp = it.asBoundedFloat("水平偏移", RingConfig.OFFSET_MIN..RingConfig.OFFSET_MAX, 10f))
         }
         obj["offset_y_dp"]?.let {
-            next = next.copy(offsetYDp = it.asBoundedFloat("垂直偏移", RingConfig.OFFSET_MIN..RingConfig.OFFSET_MAX, 1f))
+            next = next.copy(offsetYDp = it.asBoundedFloat("垂直偏移", RingConfig.OFFSET_MIN..RingConfig.OFFSET_MAX, 10f))
         }
         obj["color_mode"]?.let {
             val mode = it.asInt("配色模式")

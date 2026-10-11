@@ -39,7 +39,10 @@ data class RingConfig(
     val offsetXDp: Float = 0f,
     /** 垂直偏移（dp），正值向下 */
     val offsetYDp: Float = 0f,
-    /** 环半径缩放，1.0 为默认，用于精确贴合挖孔 */
+    /**
+     * 环半径缩放。设置页已移除该调节（与「贴孔间隙」重叠：内缘距孔距离在
+     * scale=1 时恰等于 gap），字段与渲染公式保留兜底，实际恒为默认 1.0。
+     */
     val scale: Float = 1f,
     /**
      * 手动指定挖孔直径（dp）；0 = 自动（按系统挖孔安全区定位）。
