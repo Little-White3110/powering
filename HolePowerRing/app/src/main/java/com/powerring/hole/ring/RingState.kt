@@ -1005,8 +1005,9 @@ object RingState {
     private var settleUntilMs: Long = 0L
 
     /**
-     * 进入收起沉降窗口：窗口内 [collapseTarget] 一律返回 0（不收起），
-     * 并立刻把画面拉回完整显示，保证「解锁完成 → 环马上就在」。
+     * 进入收起沉降窗口：窗口内 [collapseTarget] 把面板/沉浸等**过渡态**信号一律
+     * 压成 0（不收起），并立刻把画面拉回完整显示，保证「解锁完成 → 环马上就在」。
+     * 锁屏（v1.3.3）与灵动岛（v1.3.4）是可持续状态，不在此列，按实时值生效。
      */
     fun beginSettleWindow(durationMs: Long) {
         val now = SystemClock.uptimeMillis()
@@ -1016,13 +1017,24 @@ object RingState {
         // 放在复位之前，避免「锁屏隐藏」残留 true 把环多压一会儿。
         syncLockScreenState()
         statusBarCollapsed = false
+        // 盲清只作兜底：紧接着按实时值对齐，探针读不到（meterView 弱引用失效 /
+        // View 未 attach）时维持 false，与旧行为完全一致
         islandShowing = false
         shadeExpanded = false
         controlCenterShowing = false
+        // v1.3.4：灵动岛是可持续状态而非过渡态手势，不能盲清后坐等 1.6s 窗口结束
+        // 才避让（那时探针去重早已吃掉真实信号，只剩看门狗无动画硬切）。仿照上面
+        // syncLockScreenState 的套路同步 reconcile 一次：IslandVisibilityHook 回读
+        // mIsIslandShowing 实时值并驱动，配合 collapseTarget 的岛豁免，保证
+        // 「解锁时有岛 → 立即收起」。读不到时上面的盲清就是安全兜底。
+        requestReconcile()
         cancelCollapseAnimator()
-        // 用目标值定进度：常规解锁 → 0（环立刻回来）；万一仍处锁屏隐藏 → 1（保持收起）
+        // 用目标值定进度：常规解锁 → 0（环立刻回来）；仍处锁屏隐藏 / 有岛 → 1（保持收起）
         collapseProgress = collapseTarget()
-        ModuleLog.i("收起沉降窗口开始: ${durationMs}ms（其间忽略全部收起信号，环保持完整显示）")
+        ModuleLog.i(
+            "收起沉降窗口开始: ${durationMs}ms（忽略面板/沉浸等过渡态信号；" +
+                "岛=$islandShowing 锁屏=$lockScreenShowing 定档 progress=$collapseProgress）",
+        )
         invalidateAll()
         applyIslandColorFreeze()
         try {
@@ -1044,10 +1056,16 @@ object RingState {
         // v1.3.3：锁屏隐藏圆环不受沉降窗口影响——锁屏上就是要立刻收起，
         // 否则「亮屏 → 1.6s 沉降窗口」会让环在锁屏上闪一下再消失。
         val byLockScreen = lockScreenShowing && c.hideRingOnLockScreen
-        // 解锁/亮屏后的沉降窗口内一律不收起：治「进桌面后要等一会儿才有环」
-        if (inSettleWindow() && !byLockScreen) return 0f
-        val byImmersive = statusBarCollapsed && c.collapseOnImmersive
+        // v1.3.4：灵动岛同理不受沉降窗口影响——岛是可持续状态（解锁后音乐/充电
+        // 仍在播），不是解锁动画里的过渡态假信号。若窗口把岛也压成「不收起」，
+        // 环会直接盖在岛上；而探针 drive 的去重（showing == islandShowing 早退）
+        // 会让窗口内读到的真实值再也驱不动一次，只能等 1.6s 窗口过期由看门狗
+        // 无动画硬切——用户看到的就是「解锁进桌面后环压在岛上，过一两秒才避让」。
         val byIsland = islandShowing && c.collapseOnIsland
+        // 解锁/亮屏后的沉降窗口内一律不收起：治「进桌面后要等一会儿才有环」。
+        // 豁免只给锁屏与灵动岛两个可持续状态，面板/沉浸等过渡态照旧压掉。
+        if (inSettleWindow() && !byLockScreen && !byIsland) return 0f
+        val byImmersive = statusBarCollapsed && c.collapseOnImmersive
         val byShade = shadeExpanded && c.hideInShade
         val byControlCenter = controlCenterShowing && c.hideInControlCenter
         return if (byImmersive || byIsland || byShade || byControlCenter || byLockScreen) 1f else 0f
