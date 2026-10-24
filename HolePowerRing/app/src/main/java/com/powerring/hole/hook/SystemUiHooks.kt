@@ -99,6 +99,13 @@ object SystemUiHooks {
             ModuleLog.e("点击显示电量 Hook 安装异常", t)
         }
 
+        // 状态栏双击回顶（可选）：拦截系统「单击状态栏回顶」改为双击，避免与点击显电量误触
+        try {
+            StatusBarDoubleTapTopHook.install(classLoader)
+        } catch (t: Throwable) {
+            ModuleLog.e("状态栏双击回顶 Hook 安装异常", t)
+        }
+
         // 消息提醒闪烁数据源（通知栏可清除通知存在性）
         try {
             NotificationBlinkHook.install(classLoader)

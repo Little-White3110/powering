@@ -107,6 +107,15 @@ data class RingConfig(
     val tapShowPercent: Boolean = true,
     /** 电量数字显示时长（ms，1000–6000）：点击挖孔与「电量节点」自动弹出共用 */
     val tapPercentDurationMs: Int = 2600,
+    /**
+     * 状态栏双击回到顶部（v1.3.x 新增）。
+     *
+     * 开启后拦截系统「单击状态栏滚动到顶部」，改为双击触发——
+     * 避免与「点击显示电量」在挖孔区域互相误触。默认关（保持系统原生）。
+     */
+    val statusBarDoubleTapTop: Boolean = false,
+    /** 双击判定间隔（ms，[DOUBLE_TAP_INTERVAL_MIN]–[DOUBLE_TAP_INTERVAL_MAX]）：两次点按抬起间隔 ≤ 此值才算双击 */
+    val statusBarDoubleTapIntervalMs: Int = DOUBLE_TAP_INTERVAL_DEFAULT,
     /** 防烧屏：环整体亚像素级缓慢漂移 + 限制最高亮度，避免固定图形长期静置留下残影 */
     val burnInProtection: Boolean = true,
     /** 亮度上限（百分比，30–100）：环、底槽与光晕的透明度都不会超过它 */
@@ -283,6 +292,8 @@ data class RingConfig(
         const val KEY_BLINK_NOTIF_DURATION = "blink_notif_duration_seconds"
         const val KEY_TAP_SHOW_PERCENT = "tap_show_percent"
         const val KEY_TAP_PERCENT_DURATION = "tap_percent_duration_ms"
+        const val KEY_STATUS_BAR_DOUBLE_TAP_TOP = "status_bar_double_tap_top"
+        const val KEY_STATUS_BAR_DOUBLE_TAP_INTERVAL = "status_bar_double_tap_interval_ms"
         const val KEY_BURN_IN_PROTECTION = "burn_in_protection"
         const val KEY_MAX_BRIGHTNESS_PERCENT = "max_brightness_percent"
         const val KEY_GLOW_STRENGTH = "glow_strength_percent"
@@ -351,6 +362,11 @@ data class RingConfig(
         // 电量数字显示时长（ms）
         const val TAP_DURATION_MIN_MS = 1000
         const val TAP_DURATION_MAX_MS = 6000
+
+        // 双击回顶间隔（ms）
+        const val DOUBLE_TAP_INTERVAL_MIN = 300
+        const val DOUBLE_TAP_INTERVAL_MAX = 1500
+        const val DOUBLE_TAP_INTERVAL_DEFAULT = 800
 
         // 动画速度滑杆范围（百分数）：下限放到 10%，让呼吸/闪烁能真正「慢下来」
         const val SPEED_MIN = 10

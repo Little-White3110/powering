@@ -185,6 +185,13 @@ object HookPrefs {
             tapPercentDurationMs = toInt(
                 values[RingConfig.KEY_TAP_PERCENT_DURATION], d.tapPercentDurationMs,
             ),
+            statusBarDoubleTapTop = toBool(
+                values[RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_TOP], d.statusBarDoubleTapTop,
+            ),
+            statusBarDoubleTapIntervalMs = toInt(
+                values[RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_INTERVAL],
+                d.statusBarDoubleTapIntervalMs,
+            ),
             burnInProtection = toBool(values[RingConfig.KEY_BURN_IN_PROTECTION], d.burnInProtection),
             maxBrightnessPercent = toInt(
                 values[RingConfig.KEY_MAX_BRIGHTNESS_PERCENT], d.maxBrightnessPercent,

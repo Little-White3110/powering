@@ -81,6 +81,10 @@ class ConfigProvider : ContentProvider() {
         RingConfig.KEY_TAP_SHOW_PERCENT -> prefs.getBoolean(key, RingConfig.DEFAULT.tapShowPercent)
         RingConfig.KEY_TAP_PERCENT_DURATION ->
             prefs.getInt(key, RingConfig.DEFAULT.tapPercentDurationMs)
+        RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_TOP ->
+            prefs.getBoolean(key, RingConfig.DEFAULT.statusBarDoubleTapTop)
+        RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_INTERVAL ->
+            prefs.getInt(key, RingConfig.DEFAULT.statusBarDoubleTapIntervalMs)
         RingConfig.KEY_BURN_IN_PROTECTION ->
             prefs.getBoolean(key, RingConfig.DEFAULT.burnInProtection)
         RingConfig.KEY_MAX_BRIGHTNESS_PERCENT ->
@@ -200,6 +204,8 @@ class ConfigProvider : ContentProvider() {
             RingConfig.KEY_BLINK_COLOR_ALT,
             RingConfig.KEY_TAP_SHOW_PERCENT,
             RingConfig.KEY_TAP_PERCENT_DURATION,
+            RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_TOP,
+            RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_INTERVAL,
             RingConfig.KEY_BURN_IN_PROTECTION,
             RingConfig.KEY_MAX_BRIGHTNESS_PERCENT,
             RingConfig.KEY_GLOW_STRENGTH,

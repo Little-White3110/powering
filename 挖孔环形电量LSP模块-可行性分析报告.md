@@ -825,6 +825,53 @@ README 与隐私说明尚未同步。
 
 ---
 
+## 21. 状态栏"单击回顶"的触发链与双击改造（2026-10-24 逆向实证，真机验收未执行）
+
+「点击显示电量」（`CutoutTapHook`）与系统的「单击状态栏滚动到页面顶部」在挖孔区域天然撞车：
+两者都以 `PhoneStatusBarView.onTouchEvent` 为事件源，用户点挖孔想看电量数字时，页面同时被
+带回顶部。本章记录本机（25102RKBEC / 系统界面 17.03.260226.r / 插件 18.2.2.2.0）逆向得到的
+**真实回顶触发链**，以及模块的"单改双"方案（`StatusBarDoubleTapTopHook`，配置键
+`status_bar_double_tap_top` / `status_bar_double_tap_interval_ms`，默认关 / 800ms）。
+
+### 21.1 触发链（work/ 脚本逐环证实）
+
+| 环节 | 类/方法 | 说明 |
+| --- | --- | --- |
+| 触摸入口 | `com.android.systemui.statusbar.phone.PhoneStatusBarView.onTouchEvent` | 事件同时喂给 `mStatusBarLongPressGestureDetector`（public final）持有的 `GestureDetector` |
+| 手势监听器 | `…gesture.StatusBarLongPressGestureDetector$gestureDetector$1`（`SimpleOnGestureListener`） | 实现 `onSingleTapConfirmed(MotionEvent)` 与 `onDoubleTapEvent(MotionEvent)`，两者都只调一个方法 |
+| 回顶派发 | `com.miui.systemui.statusbar.StatusBarClickTool.invokeInputManager(Z)`（classes3.dex，public final） | `Z=true` 为"双击"语义；内部守卫：`clickHappen` 时间戳防抖（"clicked too fast"）、灵动岛显示拦截（"island showing, ignore click"）、disable 拦截（"disable all, ignore click"）；最终经 `MiuiInputManager` 反射派发 scrollTop（日志 "scrollTop successful, from double"） |
+| 取实例路径 | `PhoneStatusBarView.mStatusBarLongPressGestureDetector` → `.clickTool`（public final） | 模块反射取它来主动派发 |
+
+### 21.2 证伪记录（不要再去查这几条路）
+
+- `mIsScrollToTopEnabled` / `mScrollToTopEnabled` 字段属于 `RecyclerView` / `NestedScrollView` /
+  Compose `LayoutNode`（androidx 基建），与状态栏回顶**无关**；
+- `com.android.systemui.statusbar.domain.interactor.ScrollToTopInteractor` 在本机 dex 中是空壳
+  （无方法、无字段、无引用），`wm.shell.scrolltotop.ScrollToTopController` 只有 Dagger 提供者
+  字符串、无实际类——均不构成调用链；
+- 点状态栏**展开通知面板**走的是另一个监听器
+  （`PhoneStatusBarViewController$createClickListener$gestureDetector$1.onSingleTapUp` →
+  `animateExpandShade/ExpandQs`），与回顶通路独立，本方案未触碰。
+
+### 21.3 方案与边界
+
+- 拦截点选 `$gestureDetector$1` 的两条回调（`beforeHookedMethod` 置 `result=false`）而不是
+  `invokeInputManager`——这样模块自己的派发调用 `invokeInputManager(true)` 不会被自己的 Hook
+  拦住，系统原生守卫（防抖/岛显隐/disable）全部复用；
+- 双击判定独立于系统 `GestureDetector`（其双击窗口固定 ~300ms 不可调），`DoubleTapGate`
+  纯 JVM 状态机（6 条单测）：间隔 ≤ 配置值（默认 800ms，300–1500 可调）且位移 ≤ 24dp；
+  双击成立即消费，第三击按新首击计；
+- 拦截 Hook 常驻安装、回调内按配置热判开关；配置未加载时默认 false = 原生行为（降级方向安全）；
+  找不到内部类时只降级本功能，圆环本体不受影响；
+- **版本敏感**：`$gestureDetector$1` 是 R8 合成的内部类名，换机型/换版本必须先用
+  `work/dump_class.py` 核对（`find_classes.py sysui "StatusBarLongPressGestureDetector"`）；
+- 第一击若点在挖孔区仍会立即显电量数字（显电量延迟到双击窗口结束会带来 0.8s 迟滞，不采纳）。
+
+**验证状态**：代码 + 52 条 JVM 单测全绿（2026-10-24）；**真机验收尚未执行**，清单见
+`docs/superpowers/plans/2026-10-24-status-bar-double-tap-top.md` Task 6。
+
+---
+
 ## 附录 A：关键类索引（逆向实证）
 
 

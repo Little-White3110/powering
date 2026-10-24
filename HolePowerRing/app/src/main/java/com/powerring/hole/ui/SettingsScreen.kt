@@ -1219,6 +1219,42 @@ private fun BasicTabContent(
                         enabled = config.ringEnabled && config.percentNodesEnabled,
                         onClick = onEditNodes,
                     )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    SwitchPreference(
+                        checked = config.statusBarDoubleTapTop,
+                        onCheckedChange = { enabled ->
+                            PrefsStore.setBoolean(
+                                ctx, RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_TOP, enabled,
+                            )
+                            update(config.copy(statusBarDoubleTapTop = enabled))
+                        },
+                        title = "状态栏双击回到顶部",
+                        summary = "把系统「单击状态栏列表回顶」改为双击触发，避免与「点击显示电量」互相误触；间隔可调，改动即时生效",
+                        enabled = config.ringEnabled,
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    ConfigSlider(
+                        title = "双击间隔",
+                        summary = "两次点击不超过该间隔才算双击回顶",
+                        value = config.statusBarDoubleTapIntervalMs / 1000f,
+                        valueRange = RingConfig.DOUBLE_TAP_INTERVAL_MIN / 1000f..
+                            RingConfig.DOUBLE_TAP_INTERVAL_MAX / 1000f,
+                        valueText = String.format("%.1f 秒", config.statusBarDoubleTapIntervalMs / 1000f),
+                        enabled = config.ringEnabled && config.statusBarDoubleTapTop,
+                        step = 0.1f,
+                        transform = { (it * 10).roundToInt() / 10f },
+                        onChange = { v ->
+                            update(config.copy(statusBarDoubleTapIntervalMs = (v * 1000).roundToInt()))
+                        },
+                        onCommit = { v ->
+                            PrefsStore.setInt(
+                                ctx,
+                                RingConfig.KEY_STATUS_BAR_DOUBLE_TAP_INTERVAL,
+                                (v * 1000).roundToInt(),
+                            )
+                            update(config.copy(statusBarDoubleTapIntervalMs = (v * 1000).roundToInt()))
+                        },
+                    )
                 }
             }
             item(key = "burnInTitle") {
